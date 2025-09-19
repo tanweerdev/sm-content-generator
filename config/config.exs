@@ -52,6 +52,28 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Configure Ueberauth for OAuth
+config :ueberauth, Ueberauth,
+  providers: [
+    google: {Ueberauth.Strategy.Google, []}
+  ]
+
+config :ueberauth, Ueberauth.Strategy.Google.OAuth,
+  client_id: System.get_env("GOOGLE_CLIENT_ID"),
+  client_secret: System.get_env("GOOGLE_CLIENT_SECRET")
+
+# Configure Goth for Google APIs
+config :goth,
+  json: System.get_env("GOOGLE_SERVICE_ACCOUNT_JSON") || "{}"
+
+# Configure OpenAI
+config :openai,
+  api_key: System.get_env("OPENAI_API_KEY"),
+  organization_key: System.get_env("OPENAI_ORGANIZATION_KEY")
+
+# Configure Tesla to suppress deprecation warnings
+config :tesla, disable_deprecated_builder_warning: true
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

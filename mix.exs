@@ -61,7 +61,18 @@ defmodule SMG.MixProject do
       {:telemetry_poller, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+      # OAuth and API integrations
+      {:ueberauth, "~> 0.10"},
+      {:ueberauth_google, "~> 0.12"},
+      {:google_api_calendar, "~> 0.23"},
+      {:goth, "~> 1.3"},
+      {:tesla, "~> 1.9"},
+      {:hackney, "~> 1.20"},
+      # AI content generation
+      {:openai, "~> 0.6"},
+      # Date/time utilities
+      {:timex, "~> 3.7"}
     ]
   end
 
