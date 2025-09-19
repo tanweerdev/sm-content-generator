@@ -10,6 +10,15 @@ defmodule SMGWeb.AuthController do
   end
 
   def callback(%{assigns: %{ueberauth_auth: auth}} = conn, _params) do
+    require Logger
+
+    Logger.info("OAuth callback received",
+      uid: auth.uid,
+      email: auth.info.email,
+      scopes: auth.credentials.scopes,
+      token_length: String.length(auth.credentials.token)
+    )
+
     case upsert_user_from_auth(auth) do
       {:ok, user} ->
         conn
@@ -31,6 +40,10 @@ defmodule SMGWeb.AuthController do
   end
 
   def logout(conn, _params) do
+    require Logger
+
+    Logger.info("User logging out", user_id: get_session(conn, :user_id))
+
     conn
     |> clear_session()
     |> put_flash(:info, "You have been logged out.")

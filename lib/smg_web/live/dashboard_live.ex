@@ -8,17 +8,13 @@ defmodule SMGWeb.DashboardLive do
   def mount(_params, _session, socket) do
     user = socket.assigns.current_user
 
-    if user do
-      socket =
-        socket
-        |> assign(:user, user)
-        |> assign(:loading, false)
-        |> load_data()
+    socket =
+      socket
+      |> assign(:user, user)
+      |> assign(:loading, false)
+      |> load_data()
 
-      {:ok, socket}
-    else
-      {:ok, redirect(socket, to: "/")}
-    end
+    {:ok, socket}
   end
 
   @impl true
@@ -80,11 +76,13 @@ defmodule SMGWeb.DashboardLive do
 
     google_accounts = Accounts.list_user_google_accounts(user)
     upcoming_events = Events.list_upcoming_events_for_user(user, 20)
+    all_events = Events.list_events_for_user(user)
     draft_posts = Social.list_draft_posts_for_user(user)
 
     socket
     |> assign(:google_accounts, google_accounts)
     |> assign(:upcoming_events, upcoming_events)
+    |> assign(:all_events, all_events)
     |> assign(:draft_posts, draft_posts)
   end
 
@@ -95,12 +93,30 @@ defmodule SMGWeb.DashboardLive do
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <!-- Header -->
         <div class="mb-8">
-          <h1 class="text-3xl font-bold text-gray-900">
-            Welcome back, <%= @user.name || @user.email %>
-          </h1>
-          <p class="mt-1 text-sm text-gray-600">
-            Manage your meetings and generate social content
-          </p>
+          <div class="flex items-center justify-between">
+            <div>
+              <h1 class="text-3xl font-bold text-gray-900">
+                Welcome back, <%= @user.name || @user.email %>
+              </h1>
+              <p class="mt-1 text-sm text-gray-600">
+                Manage your meetings and generate social content
+              </p>
+            </div>
+            <div class="flex items-center space-x-4">
+              <%= if @user.avatar_url do %>
+                <img src={@user.avatar_url} alt="User avatar" class="w-10 h-10 rounded-full" />
+              <% else %>
+                <div class="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center">
+                  <span class="text-sm font-medium text-gray-600">
+                    <%= String.first(@user.name || @user.email) %>
+                  </span>
+                </div>
+              <% end %>
+              <a href="/auth/logout" class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                Logout
+              </a>
+            </div>
+          </div>
         </div>
 
         <!-- Google Accounts Section -->
@@ -163,9 +179,14 @@ defmodule SMGWeb.DashboardLive do
           <!-- Upcoming Events -->
           <div class="bg-white overflow-hidden shadow rounded-lg">
             <div class="px-4 py-5 sm:p-6">
-              <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
-                Upcoming Events
-              </h3>
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">
+                  Upcoming Events
+                </h3>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  <%= length(@upcoming_events) %> events
+                </span>
+              </div>
 
               <%= if @upcoming_events == [] do %>
                 <div class="text-center py-6">
@@ -178,24 +199,49 @@ defmodule SMGWeb.DashboardLive do
                   </p>
                 </div>
               <% else %>
-                <div class="space-y-3">
+                <div class="space-y-4">
                   <%= for event <- @upcoming_events do %>
-                    <div class="border border-gray-200 rounded-lg p-4">
+                    <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
                       <div class="flex items-start justify-between">
                         <div class="flex-1">
-                          <h4 class="text-sm font-medium text-gray-900">
-                            <%= event.title || "Untitled Event" %>
-                          </h4>
-                          <p class="text-sm text-gray-500 mt-1">
-                            <%= format_datetime(event.start_time) %>
-                          </p>
-                          <%= if event.meeting_link do %>
-                            <p class="text-xs text-green-600 mt-1">
-                              📞 Meeting link available
+                          <div class="flex items-center space-x-2 mb-2">
+                            <h4 class="text-sm font-medium text-gray-900">
+                              <%= event.title || "Untitled Event" %>
+                            </h4>
+                            <%= if event.meeting_link do %>
+                              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                📞 Meeting
+                              </span>
+                            <% end %>
+                          </div>
+
+                          <div class="space-y-1">
+                            <p class="text-sm text-gray-600">
+                              <span class="font-medium">Start:</span> <%= format_datetime(event.start_time) %>
                             </p>
-                          <% end %>
+                            <%= if event.end_time do %>
+                              <p class="text-sm text-gray-600">
+                                <span class="font-medium">End:</span> <%= format_datetime(event.end_time) %>
+                              </p>
+                            <% end %>
+
+                            <%= if event.description do %>
+                              <p class="text-sm text-gray-500 mt-2 line-clamp-2">
+                                <%= String.slice(event.description, 0, 100) %><%= if String.length(event.description) > 100, do: "..." %>
+                              </p>
+                            <% end %>
+
+                            <%= if event.meeting_link do %>
+                              <div class="mt-2">
+                                <a href={event.meeting_link} target="_blank" class="text-xs text-indigo-600 hover:text-indigo-500 font-medium">
+                                  🔗 Join Meeting
+                                </a>
+                              </div>
+                            <% end %>
+                          </div>
                         </div>
-                        <div class="ml-4">
+
+                        <div class="ml-4 flex flex-col items-end space-y-2">
                           <label class="inline-flex items-center">
                             <input
                               type="checkbox"
@@ -206,15 +252,21 @@ defmodule SMGWeb.DashboardLive do
                             />
                             <span class="ml-2 text-sm text-gray-700">AI Notetaker</span>
                           </label>
+
+                          <%= if event.transcript_status do %>
+                            <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{transcript_status_color(event.transcript_status)}"}>
+                              <%= String.capitalize(event.transcript_status) %>
+                            </span>
+                          <% end %>
                         </div>
                       </div>
-                      <%= if event.transcript_status do %>
-                        <div class="mt-2">
-                          <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{transcript_status_color(event.transcript_status)}"}>
-                            <%= String.capitalize(event.transcript_status) %>
-                          </span>
+
+                      <div class="mt-3 pt-3 border-t border-gray-100">
+                        <div class="flex items-center justify-between text-xs text-gray-500">
+                          <span>Google Event ID: <%= event.google_event_id %></span>
+                          <span>Account: <%= event.google_account.email %></span>
                         </div>
-                      <% end %>
+                      </div>
                     </div>
                   <% end %>
                 </div>
@@ -263,6 +315,120 @@ defmodule SMGWeb.DashboardLive do
                       </p>
                     </div>
                   <% end %>
+                </div>
+              <% end %>
+            </div>
+          </div>
+        </div>
+
+        <!-- All Calendar Events Section -->
+        <div class="mt-8">
+          <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="px-4 py-5 sm:p-6">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">
+                  All Calendar Events
+                </h3>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                  Synced from Google Calendar
+                </span>
+              </div>
+
+              <%= if @all_events == [] do %>
+                <div class="text-center py-6">
+                  <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                    <path d="M8 14v20c0 4.418 7.163 8 16 8 1.381 0 2.721-.087 4-.252M8 14c0 4.418 7.163 8 16 8s16-3.582 16-8M8 14c0-4.418 7.163-8 16-8s16 3.582 16 8m0 0v14m-16-5c0 4.418 7.163 8 16 8 1.381 0 2.721-.087 4-.252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                  <h3 class="mt-2 text-sm font-medium text-gray-900">No calendar events found</h3>
+                  <p class="mt-1 text-sm text-gray-500">
+                    Sync your Google Calendar to see all events here.
+                  </p>
+                </div>
+              <% else %>
+                <div class="overflow-hidden">
+                  <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                      <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Event</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                      <%= for event <- @all_events do %>
+                        <tr class="hover:bg-gray-50">
+                          <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                              <div class="flex-shrink-0 h-10 w-10">
+                                <div class="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                                  <svg class="h-5 w-5 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
+                                    <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+                                  </svg>
+                                </div>
+                              </div>
+                              <div class="ml-4">
+                                <div class="text-sm font-medium text-gray-900">
+                                  <%= event.title || "Untitled Event" %>
+                                </div>
+                                <div class="text-sm text-gray-500">
+                                  <%= if event.description do %>
+                                    <%= String.slice(event.description, 0, 50) %><%= if String.length(event.description) > 50, do: "..." %>
+                                  <% else %>
+                                    No description
+                                  <% end %>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">
+                              <%= format_datetime(event.start_time) %>
+                            </div>
+                            <%= if event.end_time do %>
+                              <div class="text-sm text-gray-500">
+                                to <%= format_datetime(event.end_time) %>
+                              </div>
+                            <% end %>
+                          </td>
+                          <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex flex-col space-y-1">
+                              <%= if event.meeting_link do %>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                  📞 Has Meeting
+                                </span>
+                              <% end %>
+                              <%= if event.transcript_status do %>
+                                <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{transcript_status_color(event.transcript_status)}"}>
+                                  <%= String.capitalize(event.transcript_status) %>
+                                </span>
+                              <% end %>
+                            </div>
+                          </td>
+                          <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div class="flex items-center space-x-2">
+                              <label class="inline-flex items-center">
+                                <input
+                                  type="checkbox"
+                                  checked={event.notetaker_enabled}
+                                  phx-click="toggle_notetaker"
+                                  phx-value-event_id={event.id}
+                                  class="form-checkbox h-4 w-4 text-indigo-600 transition duration-150 ease-in-out"
+                                />
+                                <span class="ml-2 text-sm text-gray-700">AI Notetaker</span>
+                              </label>
+                              <%= if event.meeting_link do %>
+                                <a href={event.meeting_link} target="_blank" class="text-indigo-600 hover:text-indigo-500 text-sm">
+                                  Join
+                                </a>
+                              <% end %>
+                            </div>
+                          </td>
+                        </tr>
+                      <% end %>
+                    </tbody>
+                  </table>
                 </div>
               <% end %>
             </div>

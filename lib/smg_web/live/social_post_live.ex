@@ -6,21 +6,16 @@ defmodule SMGWeb.SocialPostLive do
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     user = socket.assigns.current_user
+    social_post = Social.get_social_post_for_user!(id, user)
 
-    if user do
-      social_post = Social.get_social_post_for_user!(id, user)
+    socket =
+      socket
+      |> assign(:social_post, social_post)
+      |> assign(:user, user)
+      |> assign(:editing, false)
+      |> assign(:posting, false)
 
-      socket =
-        socket
-        |> assign(:social_post, social_post)
-        |> assign(:user, user)
-        |> assign(:editing, false)
-        |> assign(:posting, false)
-
-      {:ok, socket}
-    else
-      {:ok, redirect(socket, to: "/")}
-    end
+    {:ok, socket}
   end
 
   @impl true
@@ -163,6 +158,9 @@ defmodule SMGWeb.SocialPostLive do
               <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
                 <%= String.capitalize(@social_post.platform) %>
               </span>
+              <a href="/auth/logout" class="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                Logout
+              </a>
             </div>
           </div>
         </div>

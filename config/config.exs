@@ -55,12 +55,15 @@ config :phoenix, :json_library, Jason
 # Configure Ueberauth for OAuth
 config :ueberauth, Ueberauth,
   providers: [
-    google: {Ueberauth.Strategy.Google, []}
+    google: {Ueberauth.Strategy.Google, [
+      default_scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly"
+    ]}
   ]
 
 config :ueberauth, Ueberauth.Strategy.Google.OAuth,
   client_id: System.get_env("GOOGLE_CLIENT_ID"),
-  client_secret: System.get_env("GOOGLE_CLIENT_SECRET")
+  client_secret: System.get_env("GOOGLE_CLIENT_SECRET"),
+  scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly"
 
 # Configure Goth for Google APIs
 config :goth,

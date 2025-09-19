@@ -22,9 +22,9 @@ defmodule SMGWeb.Router do
   scope "/auth", SMGWeb do
     pipe_through :browser
 
+    get "/logout", AuthController, :logout
     get "/:provider", AuthController, :request
     get "/:provider/callback", AuthController, :callback
-    delete "/logout", AuthController, :logout
   end
 
   scope "/", SMGWeb do
@@ -36,8 +36,10 @@ defmodule SMGWeb.Router do
   scope "/", SMGWeb do
     pipe_through [:browser, :require_auth]
 
-    live "/dashboard", DashboardLive
-    live "/posts/:id", SocialPostLive
+    live_session :require_auth, on_mount: {SMGWeb.AuthOnMount, :ensure_authenticated} do
+      live "/dashboard", DashboardLive
+      live "/posts/:id", SocialPostLive
+    end
   end
 
   # Webhook endpoints
