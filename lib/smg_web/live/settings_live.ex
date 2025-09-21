@@ -229,6 +229,9 @@ defmodule SMGWeb.SettingsLive do
       <!-- Navigation -->
       <.navbar current_user={@user} />
 
+      <!-- Flash Messages -->
+      <SMGWeb.Layouts.flash_group flash={@flash} />
+
     <!-- Main Content -->
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <!-- Header -->

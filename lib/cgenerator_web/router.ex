@@ -18,6 +18,7 @@ defmodule SMGWeb.Router do
     plug :put_root_layout, html: {SMGWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug SMGWeb.AuthPlug
   end
 
   pipeline :require_auth do
