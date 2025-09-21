@@ -60,28 +60,67 @@ defmodule SMGWeb.AuthController do
   end
 
   defp handle_google_auth(conn, auth) do
-    case upsert_user_from_google_auth(auth) do
-      {:ok, user} ->
-        # Trigger automatic calendar sync after successful login
-        case SMG.Accounts.list_user_google_accounts(user) do
-          [google_account | _] ->
-            Task.start(fn ->
-              SMG.Integrations.GoogleCalendar.sync_events(google_account)
-            end)
+    require Logger
+    current_user = get_current_user(conn)
 
-          [] ->
-            :ok
-        end
+    Logger.info("Google auth callback",
+      current_user_id: current_user && current_user.id,
+      google_email: auth.info.email,
+      is_additional_account: !!current_user
+    )
 
-        conn
-        |> put_session(:user_id, user.id)
-        |> put_flash(:info, "Successfully authenticated with Google. Syncing your calendar...")
-        |> redirect(to: "/dashboard")
+    if current_user do
+      # User is already logged in, add this as an additional Google account
+      Logger.info("Adding additional Google account for user", user_id: current_user.id, email: auth.info.email)
 
-      {:error, reason} ->
-        conn
-        |> put_flash(:error, "Google authentication failed: #{reason}")
-        |> redirect(to: "/")
+      case connect_google_account(current_user, auth) do
+        {:ok, google_account} ->
+          Logger.info("Successfully connected additional Google account",
+            user_id: current_user.id,
+            google_account_id: google_account.id,
+            email: google_account.email
+          )
+
+          conn
+          |> put_flash(:info, "Successfully connected additional Google account: #{auth.info.email}")
+          |> redirect(to: "/settings?tab=google")
+
+        {:error, reason} ->
+          Logger.error("Failed to connect additional Google account",
+            user_id: current_user.id,
+            email: auth.info.email,
+            reason: inspect(reason)
+          )
+
+          conn
+          |> put_flash(:error, "Failed to connect Google account: #{reason}")
+          |> redirect(to: "/settings?tab=google")
+      end
+    else
+      # User is not logged in, handle as initial login
+      case upsert_user_from_google_auth(auth) do
+        {:ok, user} ->
+          # Trigger automatic calendar sync after successful login
+          case SMG.Accounts.list_user_google_accounts(user) do
+            [google_account | _] ->
+              Task.start(fn ->
+                SMG.Integrations.GoogleCalendar.sync_events(google_account)
+              end)
+
+            [] ->
+              :ok
+          end
+
+          conn
+          |> put_session(:user_id, user.id)
+          |> put_flash(:info, "Successfully authenticated with Google. Syncing your calendar...")
+          |> redirect(to: "/dashboard")
+
+        {:error, reason} ->
+          conn
+          |> put_flash(:error, "Google authentication failed: #{reason}")
+          |> redirect(to: "/")
+      end
     end
   end
 
@@ -129,6 +168,20 @@ defmodule SMGWeb.AuthController do
     end
   end
 
+  defp connect_google_account(user, auth) do
+    google_account_params = %{
+      google_user_id: auth.uid,
+      email: auth.info.email,
+      access_token: auth.credentials.token,
+      refresh_token: auth.credentials.refresh_token,
+      expires_at: auth.credentials.expires_at && DateTime.from_unix!(auth.credentials.expires_at),
+      scope: Enum.join(auth.credentials.scopes || [], " "),
+      user_id: user.id
+    }
+
+    Accounts.create_or_update_google_account(google_account_params)
+  end
+
   defp connect_social_platform(user, auth, platform) do
     platform_data = %{
       platform_user_id: auth.uid,
@@ -143,7 +196,6 @@ defmodule SMGWeb.AuthController do
   end
 
   defp get_current_user(conn) do
-    user_id = get_session(conn, :user_id)
-    user_id && Accounts.get_user(user_id)
+    conn.assigns[:current_user]
   end
 end

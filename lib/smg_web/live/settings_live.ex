@@ -42,6 +42,41 @@ defmodule SMGWeb.SettingsLive do
   end
 
   @impl true
+  def handle_event("connect_google", _params, socket) do
+    {:noreply, redirect(socket, external: "/auth/google")}
+  end
+
+  @impl true
+  def handle_event("disconnect_google", %{"account_id" => account_id}, socket) do
+    case Accounts.get_google_account(account_id) do
+      nil ->
+        socket = put_flash(socket, :error, "Google account not found")
+        {:noreply, socket}
+
+      google_account ->
+        # Check if this account belongs to the current user
+        if google_account.user_id == socket.assigns.user.id do
+          case Accounts.delete_google_account(google_account) do
+            {:ok, _} ->
+              socket =
+                socket
+                |> put_flash(:info, "Google account disconnected successfully")
+                |> load_settings()
+
+              {:noreply, socket}
+
+            {:error, _} ->
+              socket = put_flash(socket, :error, "Failed to disconnect Google account")
+              {:noreply, socket}
+          end
+        else
+          socket = put_flash(socket, :error, "Unauthorized")
+          {:noreply, socket}
+        end
+    end
+  end
+
+  @impl true
   def handle_event("disconnect_platform", %{"platform" => platform}, socket) do
     user = socket.assigns.user
 
@@ -166,6 +201,7 @@ defmodule SMGWeb.SettingsLive do
     |> assign(:connected_platforms, Settings.get_connected_platforms(user))
     |> assign(:bot_settings, Settings.get_bot_settings(user))
     |> assign(:automations, Settings.list_automations(user))
+    |> assign(:google_accounts, Accounts.list_user_google_accounts(user))
   end
 
   defp extract_bot_settings(params) do
@@ -185,13 +221,14 @@ defmodule SMGWeb.SettingsLive do
     }
   end
 
+
   @impl true
   def render(assigns) do
     ~H"""
     <div class="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-100">
       <!-- Navigation -->
       <.navbar current_user={@user} />
-      
+
     <!-- Main Content -->
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <!-- Header -->
@@ -253,7 +290,7 @@ defmodule SMGWeb.SettingsLive do
             </p>
           </div>
         </div>
-        
+
     <!-- Tabs -->
         <div class="mb-10">
           <div class="flex justify-center">
@@ -304,11 +341,26 @@ defmodule SMGWeb.SettingsLive do
                   </svg>
                   <span>Automations</span>
                 </button>
+                <button
+                  phx-click="switch_tab"
+                  phx-value-tab="google"
+                  class={"#{if @active_tab == "google", do: "bg-white text-blue-600 shadow-md", else: "text-gray-600 hover:text-gray-900 hover:bg-white/50"} px-6 py-3 text-sm font-semibold rounded-xl transition-all duration-200 flex items-center space-x-2"}
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"
+                    />
+                  </svg>
+                  <span>Google Calendar</span>
+                </button>
               </nav>
             </div>
           </div>
         </div>
-        
+
     <!-- Tab Content -->
         <%= case @active_tab do %>
           <% "oauth" -> %>
@@ -376,7 +428,7 @@ defmodule SMGWeb.SettingsLive do
                   </div>
                 </div>
               </div>
-              
+
     <!-- Facebook Connection -->
               <div class="relative group">
                 <div class="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200">
@@ -440,7 +492,7 @@ defmodule SMGWeb.SettingsLive do
                   </div>
                 </div>
               </div>
-              
+
     <!-- Coming Soon Card -->
               <div class="relative group lg:col-span-2">
                 <div class="absolute -inset-0.5 bg-gradient-to-r from-gray-200 to-gray-300 rounded-xl blur opacity-20">
@@ -586,7 +638,7 @@ defmodule SMGWeb.SettingsLive do
                                 </label>
                               <% end %>
                             </div>
-                            
+
     <!-- Auto-save Status -->
                             <%= if @saving do %>
                               <div class="mt-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
@@ -756,7 +808,7 @@ defmodule SMGWeb.SettingsLive do
                   </div>
                 </div>
               <% end %>
-              
+
     <!-- Create New Automation -->
               <div class="relative group">
                 <div class="absolute -inset-0.5 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200">
@@ -850,7 +902,7 @@ defmodule SMGWeb.SettingsLive do
                             </div>
                           </div>
                         </div>
-                        
+
     <!-- Content Configuration -->
                         <div class="bg-blue-50 rounded-xl p-6 border border-blue-100">
                           <h4 class="text-lg font-semibold text-gray-900 mb-4 flex items-center">
@@ -924,7 +976,7 @@ defmodule SMGWeb.SettingsLive do
                             </div>
                           </div>
                         </div>
-                        
+
     <!-- Settings -->
                         <div class="bg-green-50 rounded-xl p-6 border border-green-100">
                           <h4 class="text-lg font-semibold text-gray-900 mb-4 flex items-center">
@@ -989,7 +1041,7 @@ defmodule SMGWeb.SettingsLive do
                             </div>
                           </div>
                         </div>
-                        
+
     <!-- Action Buttons -->
                         <div class="flex justify-between items-center pt-6 border-t border-gray-200">
                           <div class="text-sm text-gray-500">
@@ -1021,6 +1073,152 @@ defmodule SMGWeb.SettingsLive do
                         </div>
                       </div>
                     </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+          <% "google" -> %>
+            <div class="max-w-6xl mx-auto space-y-8">
+              <!-- Connected Google Accounts -->
+              <%= if length(@google_accounts) > 0 do %>
+                <div class="relative group">
+                  <div class="absolute -inset-0.5 bg-gradient-to-r from-red-600 to-orange-600 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+                  <div class="relative bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+                    <div class="bg-gradient-to-r from-red-500 to-orange-500 px-8 py-6">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                          <div class="h-12 w-12 bg-white/20 rounded-xl flex items-center justify-center">
+                            <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"/>
+                            </svg>
+                          </div>
+                          <div>
+                            <h3 class="text-2xl font-bold text-white">Connected Google Accounts</h3>
+                            <p class="text-red-100">Manage your Google Calendar integrations</p>
+                          </div>
+                        </div>
+                        <div class="text-white/80 text-sm">
+                          {length(@google_accounts)} account{if length(@google_accounts) != 1, do: "s"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="p-8">
+                      <div class="grid gap-6">
+                        <%= for account <- @google_accounts do %>
+                          <div class="border border-gray-200 rounded-xl p-6 hover:shadow-md transition-shadow duration-200 bg-gray-50">
+                            <div class="flex items-center justify-between">
+                              <div class="flex items-center space-x-4">
+                                <div class="h-3 w-3 rounded-lg bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center shadow-md">
+                                  <svg class="h-5 w-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                                  </svg>
+                                </div>
+                                <div class="flex-1">
+                                  <h4 class="text-lg font-semibold text-gray-900 mb-1">
+                                    {account.email}
+                                  </h4>
+                                  <div class="flex items-center space-x-3">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                      <div class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1"></div>
+                                      Connected
+                                    </span>
+                                    <%= if account.scope do %>
+                                      <span class="text-xs text-gray-500">
+                                        Scopes: {String.slice(account.scope, 0, 50)}{if String.length(account.scope) > 50, do: "..."}
+                                      </span>
+                                    <% end %>
+                                  </div>
+                                  <%= if account.expires_at do %>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                      Token expires: {Calendar.strftime(account.expires_at, "%B %d, %Y at %I:%M %p")}
+                                    </p>
+                                  <% end %>
+                                </div>
+                              </div>
+                              <button
+                                phx-click="disconnect_google"
+                                phx-value-account_id={account.id}
+                                data-confirm="Are you sure you want to disconnect this Google account? This will remove access to calendar events from this account."
+                                class="inline-flex items-center px-3 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                                title="Disconnect Google account"
+                              >
+                                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                                Disconnect
+                              </button>
+                            </div>
+                          </div>
+                        <% end %>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              <% end %>
+
+              <!-- Add New Google Account -->
+              <div class="relative group">
+                <div class="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-green-600 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
+                <div class="relative bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+                  <div class="bg-gradient-to-r from-blue-500 to-green-500 px-8 py-6">
+                    <div class="flex items-center space-x-3">
+                      <div class="h-12 w-12 bg-white/20 rounded-xl flex items-center justify-center">
+                        <svg class="h-7 w-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                        </svg>
+                      </div>
+                      <div>
+                        <p class="text-blue-100">Add another Google account to sync more calendars</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="p-8">
+                    <div class="text-center">
+                      <div class="mb-6">
+                        <div class="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-500 to-green-500 rounded-xl shadow-lg mb-4">
+                          <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                          </svg>
+                        </div>
+                        <h4 class="text-lg font-bold text-gray-900 mb-2">Connect Google Calendar</h4>
+                        <p class="text-gray-600 max-w-md mx-auto">
+                          Connect multiple Google accounts to sync events from different calendars. Each account can have its own meeting automation settings.
+                        </p>
+                      </div>
+
+                      <div class="space-y-4 mb-8">
+                        <div class="flex items-center justify-center space-x-2 text-sm text-gray-600">
+                          <span>Automatic calendar event sync</span>
+                        </div>
+                        <div class="flex items-center justify-center space-x-2 text-sm text-gray-600">
+                          <span>AI meeting transcription</span>
+                        </div>
+                        <div class="flex items-center justify-center space-x-2 text-sm text-gray-600">
+                          <span>Automated content generation</span>
+                        </div>
+                      </div>
+
+                      <button
+                        phx-click="connect_google"
+                        class="inline-flex items-center justify-center px-6 py-3 border border-transparent text-sm font-medium rounded-lg text-grey bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-md transition-all duration-200 hover:shadow-lg"
+                      >
+                        <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        </svg>
+                        Connect Google Account
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

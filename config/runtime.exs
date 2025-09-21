@@ -106,5 +106,7 @@ if config_env() == :prod do
     client_id: System.get_env("GOOGLE_CLIENT_ID"),
     client_secret: System.get_env("GOOGLE_CLIENT_SECRET"),
     scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly",
-    redirect_uri: "https://#{host}/auth/google/callback"
+    redirect_uri: "https://#{host}/auth/google/callback",
+    prompt: "consent select_account",
+    access_type: "offline"
 end

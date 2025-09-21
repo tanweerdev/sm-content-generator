@@ -58,7 +58,9 @@ config :ueberauth, Ueberauth,
     google:
       {Ueberauth.Strategy.Google,
        [
-         default_scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly"
+         default_scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly",
+         prompt: "consent select_account",
+         access_type: "offline"
        ]},
     facebook:
       {Ueberauth.Strategy.Facebook,

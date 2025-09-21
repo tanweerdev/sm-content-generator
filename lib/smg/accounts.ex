@@ -125,4 +125,32 @@ defmodule SMG.Accounts do
     Repo.get(GoogleAccount, id)
     |> Repo.preload(:user)
   end
+
+  @doc """
+  Deletes a google account.
+  """
+  def delete_google_account(%GoogleAccount{} = google_account) do
+    Repo.delete(google_account)
+  end
+
+  @doc """
+  Creates or updates a google account based on google_user_id.
+  """
+  def create_or_update_google_account(attrs) when is_map(attrs) do
+    google_user_id = attrs[:google_user_id] || attrs["google_user_id"]
+
+    case get_google_account_by_google_user_id(google_user_id) do
+      nil ->
+        # Create new account
+        %GoogleAccount{}
+        |> GoogleAccount.changeset(attrs)
+        |> Repo.insert()
+
+      existing_account ->
+        # Update existing account
+        existing_account
+        |> GoogleAccount.changeset(attrs)
+        |> Repo.update()
+    end
+  end
 end
