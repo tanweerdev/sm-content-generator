@@ -2,6 +2,90 @@
 
 A Phoenix LiveView application that automatically generates social media content from meeting transcripts using AI. Advisors can connect their Google Calendar, have AI notetakers attend meetings via Recall.ai, and generate professional social media posts from the transcripts.
 
+## 🚀 Getting Started Guide
+
+### Step 1: Login and Connect Google Accounts
+
+1. **Initial Login**:
+   - Visit the homepage and click **"Login with Google"**
+   - Choose your primary Google account and authorize calendar access
+   - You'll be redirected to the dashboard showing your upcoming meetings
+
+2. **Connect Multiple Google Accounts**:
+   - Go to **Settings** in the navigation menu
+   - Click on the **"Google Calendar"** tab
+   - Click **"Connect Google Account"** to add additional accounts
+   - Select a different Google account when prompted
+   - All connected accounts' calendars will be automatically synced
+
+### Step 2: Enable AI Notetaker for Meetings
+
+1. **View Your Meetings**:
+   - On the dashboard, you'll see upcoming meetings from all connected calendars
+   - Look for meetings with Zoom, Google Meet, or Microsoft Teams links
+
+2. **Enable AI Notetaker**:
+   - Find a meeting you want to record
+   - Toggle the **"AI Notetaker"** switch to ON
+   - The system automatically detects meeting platform links
+   - A bot will join your meeting a few minutes before it starts
+
+3. **Monitor Bot Status**:
+   - The meeting card shows real-time bot status (Joining, Recording, Completed)
+   - Once recording starts, you'll see live updates on the dashboard
+
+### Step 3: Create Content Automations
+
+1. **Navigate to Settings**:
+   - Go to **Settings** → **"Content Automation"** tab
+   - Click **"Add New Automation"**
+
+2. **Configure Automation**:
+   - **Name**: Give your automation a descriptive name (e.g., "Client Meeting Posts")
+   - **Platform**: Choose LinkedIn or Facebook
+   - **Auto-publish**: Toggle ON to automatically publish generated content
+   - **Prompt**: Customize the AI prompt for content generation style
+   - Click **"Create Automation"**
+
+3. **Automation in Action**:
+   - When meetings with notetakers complete, automations automatically generate content
+   - Content appears in your dashboard for review before publishing (if auto-publish is OFF)
+
+### Step 4: Generate and Post Social Media Content
+
+1. **Access Generated Content**:
+   - Go to **"View All Meetings"** to see past meetings
+   - Look for meetings with the "Has Social Content" filter
+   - Click **"View Details"** on a meeting with completed transcript
+
+2. **Review and Edit Content**:
+   - In the meeting details, see the **"Social Posts"** tab
+   - Review AI-generated posts for each connected platform
+   - Click **"Edit"** to customize content before publishing
+   - Adjust tone, add hashtags, or modify messaging
+
+3. **Publish Content**:
+   - Click **"Publish"** on content you want to share
+   - Posts are sent to your connected social media accounts
+   - Status updates show publishing progress and results
+
+4. **Manual Content Generation**:
+   - For meetings without automations, click **"Generate Social Content"**
+   - Choose which platforms to generate content for
+   - Edit and publish as needed
+
+### Step 5: Generate Follow-up Emails
+
+1. **Create Professional Follow-ups**:
+   - In meeting details, switch to the **"Follow-up Email"** tab
+   - Click **"Generate Email"** to create a professional summary
+   - The AI generates personalized follow-up content based on meeting transcript
+
+2. **Use Generated Emails**:
+   - Copy the generated email content
+   - Paste into your email client
+   - Send to meeting participants with meeting insights and next steps
+
 ## Features
 
 ### ✅ Implemented Features
