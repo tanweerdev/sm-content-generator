@@ -11,7 +11,13 @@ defmodule SMG.MixProject do
       aliases: aliases(),
       deps: deps(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
-      listeners: [Phoenix.CodeReloader]
+      listeners: [Phoenix.CodeReloader],
+      releases: [
+        cgenerator: [
+          include_executables_for: [:unix],
+          steps: [:assemble, :tar]
+        ]
+      ]
     ]
   end
 
@@ -65,6 +71,7 @@ defmodule SMG.MixProject do
       # OAuth and API integrations
       {:ueberauth, "~> 0.10"},
       {:ueberauth_google, "~> 0.12"},
+      {:ueberauth_facebook, "~> 0.9"},
       {:google_api_calendar, "~> 0.23"},
       {:goth, "~> 1.3"},
       {:tesla, "~> 1.9"},

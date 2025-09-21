@@ -2,10 +2,10 @@ import Config
 
 # Configure your database
 config :cgenerator, SMG.Repo,
-  username: "postgres",
-  password: "postgres",
+  username: "jump",
+  password: "jump",
   hostname: "localhost",
-  database: "cgenerator_dev",
+  database: "jump_db",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
@@ -19,7 +19,7 @@ config :cgenerator, SMG.Repo,
 config :cgenerator, SMGWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")],
+  http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4090")],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
@@ -82,3 +82,20 @@ config :phoenix_live_view,
   debug_attributes: true,
   # Enable helpful, but potentially expensive runtime checks
   enable_expensive_runtime_checks: true
+
+# Configure Recall.ai webhook URL for development
+config :cgenerator, :recall_webhook_url, "http://jump.mynotifire.com/webhooks/recall"
+
+# Development OAuth redirect URIs
+config :ueberauth, Ueberauth.Strategy.LinkedIn.OAuth,
+  client_id: System.get_env("LINKEDIN_CLIENT_ID"),
+  client_secret: System.get_env("LINKEDIN_CLIENT_SECRET"),
+  redirect_uri: "http://jump.mynotifire.com/auth/linkedin/callback"
+
+config :ueberauth, Ueberauth.Strategy.Google.OAuth,
+  client_id: System.get_env("GOOGLE_CLIENT_ID"),
+  client_secret: System.get_env("GOOGLE_CLIENT_SECRET"),
+  scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly",
+  redirect_uri: "http://jump.mynotifire.com/auth/google/callback",
+  prompt: "consent select_account",
+  access_type: "offline"

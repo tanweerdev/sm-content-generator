@@ -11,6 +11,15 @@ defmodule SMGWeb.Router do
     plug SMGWeb.AuthPlug
   end
 
+  pipeline :auth do
+    plug :accepts, ["html"]
+    plug :fetch_session
+    plug :fetch_flash
+    plug :put_root_layout, html: {SMGWeb.Layouts, :root}
+    plug :protect_from_forgery
+    plug :put_secure_browser_headers
+  end
+
   pipeline :require_auth do
     plug SMGWeb.AuthPlug, :require_auth
   end
@@ -20,24 +29,31 @@ defmodule SMGWeb.Router do
   end
 
   scope "/auth", SMGWeb do
-    pipe_through :browser
+    pipe_through :auth
 
+    get "/logout", AuthController, :logout
     get "/:provider", AuthController, :request
     get "/:provider/callback", AuthController, :callback
-    delete "/logout", AuthController, :logout
+    get "/linkedin/custom", LinkedInAuthController, :authorize
   end
 
   scope "/", SMGWeb do
     pipe_through :browser
 
     get "/", PageController, :home
+    get "/test-login", AuthController, :test_login
   end
 
   scope "/", SMGWeb do
     pipe_through [:browser, :require_auth]
 
-    live "/dashboard", DashboardLive
-    live "/posts/:id", SocialPostLive
+    live_session :require_auth, on_mount: {SMGWeb.AuthOnMount, :ensure_authenticated} do
+      live "/dashboard", DashboardLive
+      live "/meetings", MeetingsLive
+      live "/meetings/:id", MeetingDetailLive
+      live "/posts/:id", SocialPostLive
+      live "/settings", SettingsLive
+    end
   end
 
   # Webhook endpoints

@@ -6,6 +6,7 @@ defmodule SMG.Services.SocialMediaPoster do
   alias SMG.Social
   alias SMG.Social.SocialPost
   alias SMG.Integrations.LinkedIn
+  alias SMG.Integrations.Facebook
 
   @doc """
   Posts a social media post to the specified platform
@@ -15,8 +16,8 @@ defmodule SMG.Services.SocialMediaPoster do
       "linkedin" ->
         post_to_linkedin(social_post)
 
-      "twitter" ->
-        post_to_twitter(social_post)
+      "facebook" ->
+        post_to_facebook(social_post)
 
       platform ->
         {:error, "Unsupported platform: #{platform}"}
@@ -24,49 +25,56 @@ defmodule SMG.Services.SocialMediaPoster do
   end
 
   defp post_to_linkedin(%SocialPost{} = social_post) do
-    # For demo purposes, we'll simulate the posting
-    # In a real implementation, you'd get the user's LinkedIn access token
-    # and use the LinkedIn.post_content/2 function
-    case LinkedIn.simulate_post(social_post) do
-      {:ok, platform_post_id} ->
-        case Social.mark_as_posted(social_post, platform_post_id) do
-          {:ok, updated_post} ->
-            {:ok, updated_post}
+    # Get the user's LinkedIn connection
+    user = SMG.Accounts.get_user(social_post.user_id)
+    linkedin_connection = SMG.Settings.get_social_connection(user, "linkedin")
 
-          {:error, changeset} ->
-            {:error, "Failed to update post status: #{inspect(changeset)}"}
-        end
+    if linkedin_connection do
+      case LinkedIn.post_content(linkedin_connection, social_post) do
+        {:ok, platform_post_id} ->
+          case Social.mark_as_posted(social_post, platform_post_id) do
+            {:ok, updated_post} ->
+              {:ok, updated_post}
 
-      {:error, reason} ->
-        Social.mark_as_failed(social_post)
-        {:error, reason}
+            {:error, _changeset} ->
+              {:error, "Failed to update post status"}
+          end
+
+        {:error, reason} ->
+          Social.mark_as_failed(social_post)
+          {:error, reason}
+      end
+    else
+      # No LinkedIn connection found
+      Social.mark_as_failed(social_post)
+      {:error, "Please connect your LinkedIn account first from Settings page"}
     end
   end
 
-  defp post_to_twitter(%SocialPost{} = social_post) do
-    # Twitter posting would be implemented here
-    # For now, we'll simulate it
-    case simulate_twitter_post(social_post) do
-      {:ok, platform_post_id} ->
-        Social.mark_as_posted(social_post, platform_post_id)
+  defp post_to_facebook(%SocialPost{} = social_post) do
+    # Get the user's Facebook connection
+    user = SMG.Accounts.get_user(social_post.user_id)
+    facebook_connection = SMG.Settings.get_social_connection(user, "facebook")
 
-      {:error, reason} ->
-        Social.mark_as_failed(social_post)
-        {:error, reason}
-    end
-  end
+    if facebook_connection do
+      case Facebook.post_content(facebook_connection, social_post) do
+        {:ok, platform_post_id} ->
+          case Social.mark_as_posted(social_post, platform_post_id) do
+            {:ok, updated_post} ->
+              {:ok, updated_post}
 
-  defp simulate_twitter_post(%SocialPost{} = social_post) do
-    # Simulate Twitter API
-    Process.sleep(800)
+            {:error, _changeset} ->
+              {:error, "Failed to update post status"}
+          end
 
-    case :rand.uniform(10) do
-      n when n <= 9 ->
-        platform_post_id = "twitter_post_#{System.unique_integer([:positive])}"
-        {:ok, platform_post_id}
-
-      _ ->
-        {:error, "Simulated Twitter API error"}
+        {:error, reason} ->
+          Social.mark_as_failed(social_post)
+          {:error, reason}
+      end
+    else
+      # No Facebook connection found
+      Social.mark_as_failed(social_post)
+      {:error, "Please connect your Facebook account first from Settings page"}
     end
   end
 

@@ -32,10 +32,48 @@ defmodule SMG.Events do
     from(e in CalendarEvent,
       join: g in GoogleAccount,
       on: e.google_account_id == g.id,
-      where: g.user_id == ^user.id and e.start_time > ^now,
+      where: g.user_id == ^user.id and not is_nil(e.start_time) and e.start_time > ^now,
       order_by: [asc: e.start_time],
       limit: ^limit,
-      preload: [:google_account]
+      preload: [:google_account, :social_posts]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  Returns the list of past calendar events for a user.
+  """
+  def list_past_events_for_user(%User{} = user, limit \\ 50) do
+    now = DateTime.utc_now()
+
+    from(e in CalendarEvent,
+      join: g in GoogleAccount,
+      on: e.google_account_id == g.id,
+      where: g.user_id == ^user.id and not is_nil(e.start_time) and e.start_time <= ^now,
+      order_by: [desc: e.start_time],
+      limit: ^limit,
+      preload: [:google_account, :social_posts]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  Returns events that are currently happening (between start_time and end_time).
+  """
+  def list_current_events_for_user(%User{} = user) do
+    now = DateTime.utc_now()
+
+    from(e in CalendarEvent,
+      join: g in GoogleAccount,
+      on: e.google_account_id == g.id,
+      where:
+        g.user_id == ^user.id and
+          not is_nil(e.start_time) and
+          not is_nil(e.end_time) and
+          e.start_time <= ^now and
+          e.end_time > ^now,
+      order_by: [asc: e.start_time],
+      preload: [:google_account, :social_posts]
     )
     |> Repo.all()
   end

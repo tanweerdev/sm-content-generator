@@ -12,6 +12,10 @@ defmodule SMG.Application do
       SMG.Repo,
       {DNSCluster, query: Application.get_env(:cgenerator, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: SMG.PubSub},
+      # Start the Recall.ai bot status poller
+      SMG.Services.RecallPoller,
+      # Start the OAuth token refresher
+      SMG.Services.OAuthTokenRefresher,
       # Start a worker by calling: SMG.Worker.start_link(arg)
       # {SMG.Worker, arg},
       # Start to serve requests, typically the last entry

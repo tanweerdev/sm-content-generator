@@ -6,21 +6,16 @@ defmodule SMGWeb.SocialPostLive do
   @impl true
   def mount(%{"id" => id}, _session, socket) do
     user = socket.assigns.current_user
+    social_post = Social.get_social_post_for_user!(id, user)
 
-    if user do
-      social_post = Social.get_social_post_for_user!(id, user)
+    socket =
+      socket
+      |> assign(:social_post, social_post)
+      |> assign(:user, user)
+      |> assign(:editing, false)
+      |> assign(:posting, false)
 
-      socket =
-        socket
-        |> assign(:social_post, social_post)
-        |> assign(:user, user)
-        |> assign(:editing, false)
-        |> assign(:posting, false)
-
-      {:ok, socket}
-    else
-      {:ok, redirect(socket, to: "/")}
-    end
+    {:ok, socket}
   end
 
   @impl true
@@ -57,10 +52,22 @@ defmodule SMGWeb.SocialPostLive do
   end
 
   @impl true
+  def handle_event("copy_content", _params, socket) do
+    social_post = socket.assigns.social_post
+
+    socket =
+      socket
+      |> put_flash(:info, "Content copied to clipboard!")
+      |> push_event("copy-to-clipboard", %{text: social_post.content})
+
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("post_to_social", _params, socket) do
     social_post = socket.assigns.social_post
 
-    if social_post.status == "draft" do
+    if social_post.status in ["draft", "failed"] do
       socket = assign(socket, :posting, true)
 
       # Post in the background
@@ -104,7 +111,8 @@ defmodule SMGWeb.SocialPostLive do
   @impl true
   def handle_info({:post_success, message}, socket) do
     # Reload the post to get updated status
-    social_post = Social.get_social_post_for_user!(socket.assigns.social_post.id, socket.assigns.user)
+    social_post =
+      Social.get_social_post_for_user!(socket.assigns.social_post.id, socket.assigns.user)
 
     socket =
       socket
@@ -128,8 +136,15 @@ defmodule SMGWeb.SocialPostLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-gray-50 py-8">
-      <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="min-h-screen bg-white" style="background-color: white !important;">
+      <!-- Navigation -->
+      <.navbar current_user={@user} />
+      
+    <!-- Main Content -->
+      <div
+        class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
+        style="background-color: white !important;"
+      >
         <!-- Header -->
         <div class="mb-8">
           <nav class="flex" aria-label="Breadcrumb">
@@ -143,8 +158,17 @@ defmodule SMGWeb.SocialPostLive do
               </li>
               <li>
                 <div class="flex items-center">
-                  <svg class="flex-shrink-0 h-5 w-5 text-gray-300" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
+                  <svg
+                    class="flex-shrink-0 h-5 w-5 text-gray-300"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                      clip-rule="evenodd"
+                    />
                   </svg>
                   <span class="ml-4 text-sm font-medium text-gray-500">Social Post</span>
                 </div>
@@ -153,21 +177,21 @@ defmodule SMGWeb.SocialPostLive do
           </nav>
 
           <div class="mt-4 flex items-center justify-between">
-            <h1 class="text-3xl font-bold text-gray-900">
+            <h1 class="text-3xl font-bold text-black">
               Social Media Post
             </h1>
             <div class="flex items-center space-x-3">
               <span class={"inline-flex items-center px-3 py-1 rounded-full text-sm font-medium #{status_color(@social_post.status)}"}>
-                <%= String.capitalize(@social_post.status) %>
+                {String.capitalize(@social_post.status)}
               </span>
               <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                <%= String.capitalize(@social_post.platform) %>
+                {String.capitalize(@social_post.platform)}
               </span>
             </div>
           </div>
         </div>
-
-        <!-- Main Content -->
+        
+    <!-- Main Content -->
         <div class="bg-white shadow rounded-lg">
           <div class="px-6 py-6">
             <%= if @editing do %>
@@ -181,7 +205,7 @@ defmodule SMGWeb.SocialPostLive do
                     id="content"
                     name="content"
                     rows="8"
-                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-green-500"
                     placeholder="Write your social media post..."
                   ><%= @social_post.content %></textarea>
                 </div>
@@ -189,13 +213,13 @@ defmodule SMGWeb.SocialPostLive do
                   <button
                     type="button"
                     phx-click="cancel_edit"
-                    class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    class="bg-indigo-600 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    class="bg-green-600 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                   >
                     Save Changes
                   </button>
@@ -206,7 +230,7 @@ defmodule SMGWeb.SocialPostLive do
               <div class="mb-6">
                 <h3 class="text-lg font-medium text-gray-900 mb-3">Content</h3>
                 <div class="bg-gray-50 rounded-lg p-4">
-                  <p class="text-gray-900 whitespace-pre-wrap"><%= @social_post.content %></p>
+                  <p class="text-gray-900 whitespace-pre-wrap">{@social_post.content}</p>
                 </div>
               </div>
 
@@ -215,45 +239,83 @@ defmodule SMGWeb.SocialPostLive do
                   <h3 class="text-lg font-medium text-gray-900 mb-3">Generated From</h3>
                   <div class="bg-blue-50 rounded-lg p-4">
                     <div class="flex items-center">
-                      <svg class="h-5 w-5 text-blue-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      <svg
+                        class="h-5 w-5 text-blue-400 mr-2"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                        />
                       </svg>
                       <span class="text-blue-900 font-medium">
-                        <%= @social_post.calendar_event.title || "Meeting" %>
+                        {@social_post.calendar_event.title || "Meeting"}
                       </span>
                     </div>
                     <%= if @social_post.calendar_event.start_time do %>
                       <p class="text-blue-700 text-sm mt-1">
-                        <%= format_datetime(@social_post.calendar_event.start_time) %>
+                        {format_datetime(@social_post.calendar_event.start_time)}
                       </p>
                     <% end %>
                   </div>
                 </div>
               <% end %>
-
-              <!-- Actions -->
+              
+    <!-- Actions -->
               <div class="flex items-center justify-between pt-6 border-t border-gray-200">
                 <div class="flex items-center space-x-3">
-                  <%= if @social_post.status == "draft" do %>
+                  <button
+                    phx-click="copy_content"
+                    class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    id="copy-button"
+                  >
+                    📋 Copy
+                  </button>
+                  <%= if @social_post.status in ["draft", "failed"] do %>
                     <button
                       phx-click="edit"
-                      class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                      class="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                     >
                       Edit Content
                     </button>
                     <button
                       phx-click="post_to_social"
                       disabled={@posting}
-                      class={"bg-indigo-600 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 #{if @posting, do: "opacity-50 cursor-not-allowed"}"}
+                      class={"bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 #{if @posting, do: "opacity-50 cursor-not-allowed"}"}
                     >
                       <%= if @posting do %>
-                        <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" fill="none" viewBox="0 0 24 24">
-                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        <svg
+                          class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            class="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            stroke-width="4"
+                          >
+                          </circle>
+                          <path
+                            class="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          >
+                          </path>
                         </svg>
-                        Publishing...
+                        Posting...
                       <% else %>
-                        Publish to <%= String.capitalize(@social_post.platform) %>
+                        <%= if @social_post.status == "failed" do %>
+                          Retry Post to {String.capitalize(@social_post.platform)}
+                        <% else %>
+                          Post to {String.capitalize(@social_post.platform)}
+                        <% end %>
                       <% end %>
                     </button>
                   <% end %>
@@ -268,24 +330,51 @@ defmodule SMGWeb.SocialPostLive do
                 </button>
               </div>
 
-              <%= if @social_post.status == "posted" do %>
-                <div class="mt-4 bg-green-50 rounded-lg p-4">
-                  <div class="flex">
-                    <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                    </svg>
-                    <div class="ml-3">
-                      <p class="text-sm font-medium text-green-800">
-                        Successfully posted to <%= String.capitalize(@social_post.platform) %>
-                      </p>
-                      <%= if @social_post.posted_at do %>
-                        <p class="text-sm text-green-700 mt-1">
-                          Posted on <%= format_datetime(@social_post.posted_at) %>
+              <%= cond do %>
+                <% @social_post.status == "posted" -> %>
+                  <div class="mt-4 bg-green-50 rounded-lg p-4">
+                    <div class="flex">
+                      <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path
+                          fill-rule="evenodd"
+                          d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                          clip-rule="evenodd"
+                        />
+                      </svg>
+                      <div class="ml-3">
+                        <p class="text-sm font-medium text-green-800">
+                          Successfully posted to {String.capitalize(@social_post.platform)}
                         </p>
-                      <% end %>
+                        <%= if @social_post.posted_at do %>
+                          <p class="text-sm text-green-700 mt-1">
+                            Posted on {format_datetime(@social_post.posted_at)}
+                          </p>
+                        <% end %>
+                      </div>
                     </div>
                   </div>
-                </div>
+                <% @social_post.status == "failed" -> %>
+                  <div class="mt-4 bg-red-50 rounded-lg p-4">
+                    <div class="flex">
+                      <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path
+                          fill-rule="evenodd"
+                          d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                          clip-rule="evenodd"
+                        />
+                      </svg>
+                      <div class="ml-3">
+                        <p class="text-sm font-medium text-red-800">
+                          Failed to post to {String.capitalize(@social_post.platform)}
+                        </p>
+                        <p class="text-sm text-red-700 mt-1">
+                          You can retry posting using the button above.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                <% true -> %>
+                  <!-- No status message for draft posts -->
               <% end %>
             <% end %>
           </div>
