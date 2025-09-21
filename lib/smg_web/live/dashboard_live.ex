@@ -19,8 +19,14 @@ defmodule SMGWeb.DashboardLive do
     # Only auto-sync if both upcoming and past events are empty
     if Enum.empty?(socket.assigns.upcoming_events) and Enum.empty?(socket.assigns.past_events) do
       case Accounts.list_user_google_accounts(user) do
-        [google_account | _] ->
-          send(self(), {:auto_sync_calendar, google_account.id})
+        google_accounts = [google_account | _] ->
+          Enum.each(google_accounts, fn account ->
+            if account do
+              Task.start(fn ->
+                send(self(), {:auto_sync_calendar, google_account.id})
+              end)
+            end
+          end)
 
         [] ->
           :ok
@@ -112,27 +118,30 @@ defmodule SMGWeb.DashboardLive do
     user = socket.assigns.user
 
     case Accounts.list_user_google_accounts(user) do
-      [google_account | _] ->
+      google_accounts = [_google_account | _] ->
         socket =
           socket
           |> assign(:loading, true)
 
-        # Get the current process PID to send messages back to
         parent_pid = self()
 
-        Task.start(fn ->
-          try do
-            case GoogleCalendar.sync_events(google_account) do
-              {:ok, _results} ->
-                send(parent_pid, {:sync_completed, :success})
+        Enum.each(google_accounts, fn account ->
+          if account do
+            Task.start(fn ->
+              try do
+                case GoogleCalendar.sync_events(account) do
+                  {:ok, _results} ->
+                    send(parent_pid, {:sync_completed, :success, account.email})
 
-              {:error, reason} ->
-                send(parent_pid, {:sync_completed, {:error, reason}})
-            end
-          rescue
-            error ->
-              # If sync fails with an exception, still reset the loading state
-              send(parent_pid, {:sync_completed, {:error, "Sync failed: #{inspect(error)}"}})
+                  {:error, reason} ->
+                    send(parent_pid, {:sync_completed, {:error, reason}})
+                end
+              rescue
+                error ->
+                  # If sync fails with an exception, still reset the loading state
+                  send(parent_pid, {:sync_completed, {:error, "Sync failed: #{inspect(error)}"}})
+              end
+            end)
           end
         end)
 
@@ -169,7 +178,7 @@ defmodule SMGWeb.DashboardLive do
       try do
         case GoogleCalendar.sync_events(account) do
           {:ok, _results} ->
-            send(parent_pid, {:sync_completed, :success})
+            send(parent_pid, {:sync_completed, :success, account.email})
 
           {:error, reason} ->
             send(parent_pid, {:sync_completed, {:error, reason}})
@@ -189,11 +198,11 @@ defmodule SMGWeb.DashboardLive do
   end
 
   @impl true
-  def handle_info({:sync_completed, :success}, socket) do
+  def handle_info({:sync_completed, :success, email}, socket) do
     socket =
       socket
       |> assign(:loading, false)
-      |> put_flash(:info, "Calendar synced successfully!")
+      |> put_flash(:info, "Calendar synced successfully for #{email}!")
       |> load_data()
 
     {:noreply, socket}
@@ -273,7 +282,7 @@ defmodule SMGWeb.DashboardLive do
       <!-- Flash Messages -->
       <SMGWeb.Layouts.flash_group flash={@flash} />
 
-      <!-- Dashboard Navigation -->
+    <!-- Dashboard Navigation -->
       <nav class="bg-white border-b border-gray-100 sticky top-0 z-10">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div class="flex justify-between items-center h-16">
@@ -288,7 +297,7 @@ defmodule SMGWeb.DashboardLive do
                 </div>
               </.link>
             </div>
-            
+
     <!-- Action Buttons -->
             <div class="flex items-center space-x-4">
               <!-- Sync Button -->
@@ -338,7 +347,7 @@ defmodule SMGWeb.DashboardLive do
                   </svg>
                 <% end %>
               </button>
-              
+
     <!-- Settings Button -->
               <.link
                 href="/settings"
@@ -361,7 +370,7 @@ defmodule SMGWeb.DashboardLive do
                   </path>
                 </svg>
               </.link>
-              
+
     <!-- User Menu -->
               <div class="flex items-center space-x-3">
                 <%= if @user.avatar_url do %>
@@ -384,7 +393,7 @@ defmodule SMGWeb.DashboardLive do
                   <p class="text-xs text-gray-500">{@user.email}</p>
                 </div>
               </div>
-              
+
     <!-- Logout Button -->
               <a
                 href="/auth/logout"
@@ -404,13 +413,13 @@ defmodule SMGWeb.DashboardLive do
           </div>
         </div>
       </nav>
-      
+
     <!-- Main Content -->
       <div
         class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
         style="background-color: white !important;"
       >
-        
+
     <!-- Main Content Grid -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <!-- Upcoming Events -->
@@ -542,7 +551,7 @@ defmodule SMGWeb.DashboardLive do
             </div>
           </div>
         </div>
-        
+
     <!-- Past Events -->
         <div class="mt-8">
           <div class="bg-white border border-gray-100 rounded-xl overflow-hidden">
@@ -723,7 +732,7 @@ defmodule SMGWeb.DashboardLive do
                     </div>
                   <% end %>
                 </div>
-                
+
     <!-- View All Past Events Link -->
                 <div class="mt-6 text-center">
                   <.link
@@ -753,25 +762,4 @@ defmodule SMGWeb.DashboardLive do
   defp transcript_status_color("scheduled"), do: "bg-yellow-100 text-yellow-800"
   defp transcript_status_color("failed"), do: "bg-red-100 text-red-800"
   defp transcript_status_color(_), do: "bg-gray-100 text-gray-800"
-
-  defp platform_badge_color("linkedin"), do: "bg-blue-100 text-blue-800"
-  defp platform_badge_color("facebook"), do: "bg-indigo-100 text-indigo-800"
-  defp platform_badge_color(_), do: "bg-gray-100 text-gray-800"
-
-  defp format_attendee_tooltip(attendee_emails) when is_list(attendee_emails) do
-    case attendee_emails do
-      [] ->
-        "No attendee emails available"
-
-      emails when length(emails) <= 5 ->
-        "Attendees: " <> Enum.join(emails, ", ")
-
-      emails ->
-        first_five = Enum.take(emails, 5)
-        remaining = length(emails) - 5
-        "Attendees: " <> Enum.join(first_five, ", ") <> " and #{remaining} more"
-    end
-  end
-
-  defp format_attendee_tooltip(_), do: "No attendee emails available"
 end

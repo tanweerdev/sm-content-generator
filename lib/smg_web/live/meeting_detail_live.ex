@@ -2,7 +2,7 @@ defmodule SMGWeb.MeetingDetailLive do
   use SMGWeb, :live_view
   import Ecto.Query
 
-  alias SMG.{Events, Social, AI.ContentGenerator}
+  alias SMG.{Events, AI.ContentGenerator}
   alias SMG.Integrations.RecallAI
 
   @impl true
@@ -162,7 +162,7 @@ defmodule SMGWeb.MeetingDetailLive do
   end
 
   @impl true
-  def handle_info({:content_generated, results}, socket) do
+  def handle_info({:content_generated, _results}, socket) do
     socket =
       socket
       |> assign(:generating_content, false)
@@ -301,7 +301,7 @@ defmodule SMGWeb.MeetingDetailLive do
     <div class="min-h-screen bg-white" style="background-color: white !important;">
       <!-- Navigation -->
       <.navbar current_user={@user} />
-      
+
     <!-- Main Content -->
       <div
         class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
@@ -377,7 +377,7 @@ defmodule SMGWeb.MeetingDetailLive do
             </div>
           </div>
         </div>
-        
+
     <!-- Tabs -->
         <div class="mb-6">
           <div class="border-b border-gray-200">
@@ -415,7 +415,7 @@ defmodule SMGWeb.MeetingDetailLive do
             </nav>
           </div>
         </div>
-        
+
     <!-- Tab Content -->
         <%= case @active_tab do %>
           <% "overview" -> %>
@@ -504,7 +504,7 @@ defmodule SMGWeb.MeetingDetailLive do
                   </dl>
                 </div>
               </div>
-              
+
     <!-- Quick Actions -->
               <div class="bg-white overflow-hidden shadow rounded-lg">
                 <div class="px-4 py-5 sm:p-6">

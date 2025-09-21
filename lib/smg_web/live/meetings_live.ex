@@ -2,7 +2,7 @@ defmodule SMGWeb.MeetingsLive do
   use SMGWeb, :live_view
   import Ecto.Query
 
-  alias SMG.{Events, Social}
+  alias SMG.{Events}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -120,7 +120,7 @@ defmodule SMGWeb.MeetingsLive do
     <div class="min-h-screen bg-white" style="background-color: white !important;">
       <!-- Navigation -->
       <.navbar current_user={@user} />
-      
+
     <!-- Main Content -->
       <div
         class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
@@ -135,7 +135,7 @@ defmodule SMGWeb.MeetingsLive do
             </p>
           </div>
         </div>
-        
+
     <!-- Filter Tabs -->
         <div class="mb-6">
           <div class="border-b border-gray-200">
@@ -171,7 +171,7 @@ defmodule SMGWeb.MeetingsLive do
             </nav>
           </div>
         </div>
-        
+
     <!-- Meetings List -->
         <%= if @meetings == [] do %>
           <div class="text-center py-12">
@@ -262,7 +262,7 @@ defmodule SMGWeb.MeetingsLive do
               </div>
             </div>
           <% end %>
-          
+
     <!-- Past Meetings -->
           <%= if @past_meetings != [] do %>
             <div>
@@ -318,7 +318,7 @@ defmodule SMGWeb.MeetingsLive do
                                 </div>
                               </div>
                             </div>
-                            
+
     <!-- Meeting Description -->
                             <%= if meeting.description && String.length(meeting.description) > 0 do %>
                               <div class="mt-2">
@@ -330,7 +330,7 @@ defmodule SMGWeb.MeetingsLive do
                                 </p>
                               </div>
                             <% end %>
-                            
+
     <!-- Status Badges -->
                             <div class="space-y-3 mt-3">
                               <div class="flex items-center space-x-2">
@@ -374,7 +374,7 @@ defmodule SMGWeb.MeetingsLive do
                               <% end %>
                             </div>
                           </div>
-                          
+
     <!-- Actions -->
                           <div class="flex flex-col space-y-2">
                             <.link
@@ -420,21 +420,4 @@ defmodule SMGWeb.MeetingsLive do
   defp transcript_status_color("processing"), do: "bg-blue-100 text-blue-800"
   defp transcript_status_color("failed"), do: "bg-red-100 text-red-800"
   defp transcript_status_color(_), do: "bg-gray-100 text-gray-800"
-
-  defp format_attendee_tooltip(attendee_emails) when is_list(attendee_emails) do
-    case attendee_emails do
-      [] ->
-        "No attendee emails available"
-
-      emails when length(emails) <= 5 ->
-        "Attendees: " <> Enum.join(emails, ", ")
-
-      emails ->
-        first_five = Enum.take(emails, 5)
-        remaining = length(emails) - 5
-        "Attendees: " <> Enum.join(first_five, ", ") <> " and #{remaining} more"
-    end
-  end
-
-  defp format_attendee_tooltip(_), do: "No attendee emails available"
 end

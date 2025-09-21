@@ -138,8 +138,4 @@ defmodule SMG.Integrations.RecallAI do
   defp api_token do
     System.get_env("RECALL_AI_API_TOKEN") || raise "RECALL_AI_API_TOKEN not set"
   end
-
-  defp webhook_url do
-    Application.get_env(:cgenerator, :recall_webhook_url) || "https://yourapp.com/webhooks/recall"
-  end
 end

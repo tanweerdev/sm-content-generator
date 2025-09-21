@@ -3,7 +3,6 @@ defmodule SMG.Accounts.User do
   import Ecto.Changeset
 
   alias SMG.Accounts.GoogleAccount
-  alias SMG.Events.CalendarEvent
   alias SMG.Social.SocialPost
 
   schema "users" do
