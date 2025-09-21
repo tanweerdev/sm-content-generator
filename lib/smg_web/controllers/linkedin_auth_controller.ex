@@ -164,6 +164,7 @@ defmodule SMGWeb.LinkedInAuthController do
     scheme = if conn.scheme == :https, do: "https", else: "http"
     host = get_req_header(conn, "host") |> List.first() || "localhost:4001"
     "#{scheme}://#{host}/auth/linkedin/callback"
+    "http://jump.mynotifire.com/auth/linkedin/callback"
   end
 
   defp calculate_expires_at(nil), do: nil
