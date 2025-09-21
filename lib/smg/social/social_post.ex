@@ -23,11 +23,17 @@ defmodule SMG.Social.SocialPost do
   def changeset(social_post, attrs) do
     social_post
     |> cast(attrs, [
-      :content, :platform, :posted_at, :status, :platform_post_id,
-      :generated_from_transcript, :user_id, :calendar_event_id
+      :content,
+      :platform,
+      :posted_at,
+      :status,
+      :platform_post_id,
+      :generated_from_transcript,
+      :user_id,
+      :calendar_event_id
     ])
-    |> validate_required([:content, :user_id, :calendar_event_id])
-    |> validate_inclusion(:platform, ["linkedin", "twitter", "facebook"])
+    |> validate_required([:content, :user_id])
+    |> validate_inclusion(:platform, ["linkedin", "facebook"])
     |> validate_inclusion(:status, ["draft", "posted", "failed"])
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:calendar_event_id)

@@ -55,15 +55,26 @@ config :phoenix, :json_library, Jason
 # Configure Ueberauth for OAuth
 config :ueberauth, Ueberauth,
   providers: [
-    google: {Ueberauth.Strategy.Google, [
-      default_scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly"
-    ]}
+    google:
+      {Ueberauth.Strategy.Google,
+       [
+         default_scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly"
+       ]},
+    facebook:
+      {Ueberauth.Strategy.Facebook,
+       [
+         default_scope: "email,public_profile,publish_to_groups"
+       ]}
   ]
 
 config :ueberauth, Ueberauth.Strategy.Google.OAuth,
   client_id: System.get_env("GOOGLE_CLIENT_ID"),
   client_secret: System.get_env("GOOGLE_CLIENT_SECRET"),
   scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly"
+
+config :ueberauth, Ueberauth.Strategy.Facebook.OAuth,
+  client_id: System.get_env("FACEBOOK_APP_ID"),
+  client_secret: System.get_env("FACEBOOK_APP_SECRET")
 
 # Configure Goth for Google APIs
 config :goth,
@@ -72,7 +83,8 @@ config :goth,
 # Configure OpenAI
 config :openai,
   api_key: System.get_env("OPENAI_API_KEY"),
-  organization_key: System.get_env("OPENAI_ORGANIZATION_KEY")
+  organization_key: System.get_env("OPENAI_ORGANIZATION_KEY"),
+  http_options: [recv_timeout: 30_000, timeout: 30_000]
 
 # Configure Tesla to suppress deprecation warnings
 config :tesla, disable_deprecated_builder_warning: true

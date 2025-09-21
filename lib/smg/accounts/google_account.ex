@@ -22,7 +22,15 @@ defmodule SMG.Accounts.GoogleAccount do
   @doc false
   def changeset(google_account, attrs) do
     google_account
-    |> cast(attrs, [:google_user_id, :email, :access_token, :refresh_token, :expires_at, :scope, :user_id])
+    |> cast(attrs, [
+      :google_user_id,
+      :email,
+      :access_token,
+      :refresh_token,
+      :expires_at,
+      :scope,
+      :user_id
+    ])
     |> validate_required([:google_user_id, :email, :user_id])
     |> unique_constraint(:google_user_id)
     |> foreign_key_constraint(:user_id)

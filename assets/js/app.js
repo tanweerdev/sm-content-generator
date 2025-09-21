@@ -22,14 +22,41 @@ import "phoenix_html"
 // Establish Phoenix Socket and LiveView configuration.
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
-import {hooks as colocatedHooks} from "phoenix-colocated/cgenerator"
+// import {hooks as colocatedHooks} from "./phoenix-colocated/cgenerator"
 import topbar from "../vendor/topbar"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
+
+// Custom hooks for LiveView
+// const Hooks = {
+//   ...colocatedHooks
+// }
+
+// Add copy to clipboard functionality
+window.addEventListener("phx:copy-to-clipboard", (e) => {
+  const text = e.detail.text
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text)
+  } else {
+    // Fallback for older browsers
+    const textArea = document.createElement("textarea")
+    textArea.value = text
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+    try {
+      document.execCommand('copy')
+    } catch (err) {
+      console.error('Failed to copy text: ', err)
+    }
+    document.body.removeChild(textArea)
+  }
+})
+
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  // hooks: Hooks,
 })
 
 // Show progress bar on live navigation and form submits

@@ -10,5 +10,7 @@ config :cgenerator, SMGWeb.Endpoint, cache_static_manifest: "priv/static/cache_m
 # Do not print debug messages in production
 config :logger, level: :info
 
+config :tzdata, :data_dir, "/tmp/tzdata"
+
 # Runtime production configuration, including reading
 # of environment variables, is done on config/runtime.exs.

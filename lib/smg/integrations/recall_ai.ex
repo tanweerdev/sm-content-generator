@@ -5,7 +5,7 @@ defmodule SMG.Integrations.RecallAI do
 
   use Tesla
 
-  plug Tesla.Middleware.BaseUrl, "https://api.recall.ai"
+  plug Tesla.Middleware.BaseUrl, "https://us-west-2.recall.ai"
   plug Tesla.Middleware.Headers, [{"Authorization", "Token #{api_token()}"}]
   plug Tesla.Middleware.JSON
 
@@ -14,27 +14,36 @@ defmodule SMG.Integrations.RecallAI do
   @doc """
   Creates a bot to join a meeting
   """
-  def create_bot(meeting_url, event_title \\ "Meeting") do
+  def create_bot(meeting_url, _event_title \\ "Meeting") do
+    require Logger
+
     body = %{
-      bot_name: "SMG Meeting Bot",
       meeting_url: meeting_url,
-      transcription_options: %{
-        provider: "assembly_ai"
-      },
-      real_time_transcription: %{
-        destination_url: webhook_url(),
-        partial_results: true
+      recording_config: %{
+        transcript: %{
+          provider: %{
+            recallai_streaming: %{
+              mode: "prioritize_low_latency",
+              language_code: "en"
+            }
+          }
+        }
       }
     }
 
+    Logger.info("Creating Recall.ai bot", meeting_url: meeting_url, body: body)
+
     case post("/api/v1/bot", body) do
       {:ok, %{status: 201, body: response}} ->
+        Logger.info("Bot created successfully", bot_id: response["id"])
         {:ok, response}
 
       {:ok, %{status: status, body: error}} ->
+        Logger.error("Failed to create bot", status: status, error: error)
         {:error, "Failed to create bot: #{status} - #{inspect(error)}"}
 
       {:error, reason} ->
+        Logger.error("API request failed", reason: reason)
         {:error, "API request failed: #{inspect(reason)}"}
     end
   end

@@ -82,3 +82,18 @@ config :phoenix_live_view,
   debug_attributes: true,
   # Enable helpful, but potentially expensive runtime checks
   enable_expensive_runtime_checks: true
+
+# Configure Recall.ai webhook URL for development
+config :cgenerator, :recall_webhook_url, "http://localhost:4001/webhooks/recall"
+
+# Development OAuth redirect URIs
+config :ueberauth, Ueberauth.Strategy.LinkedIn.OAuth,
+  client_id: System.get_env("LINKEDIN_CLIENT_ID"),
+  client_secret: System.get_env("LINKEDIN_CLIENT_SECRET"),
+  redirect_uri: "http://localhost:4001/auth/linkedin/callback"
+
+config :ueberauth, Ueberauth.Strategy.Google.OAuth,
+  client_id: System.get_env("GOOGLE_CLIENT_ID"),
+  client_secret: System.get_env("GOOGLE_CLIENT_SECRET"),
+  scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly",
+  redirect_uri: "http://localhost:4001/auth/google/callback"

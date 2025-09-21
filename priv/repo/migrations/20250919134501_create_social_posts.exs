@@ -3,12 +3,14 @@ defmodule SMG.Repo.Migrations.CreateSocialPosts do
 
   def change do
     create table(:social_posts) do
-      add :calendar_event_id, references(:calendar_events, on_delete: :delete_all), null: false
+      add :calendar_event_id, references(:calendar_events, on_delete: :delete_all), null: true
       add :user_id, references(:users, on_delete: :delete_all), null: false
       add :content, :text, null: false
-      add :platform, :string  # linkedin, twitter, etc
+      # linkedin, facebook, etc
+      add :platform, :string
       add :posted_at, :utc_datetime
-      add :status, :string, default: "draft"  # draft, posted, failed
+      # draft, posted, failed
+      add :status, :string, default: "draft"
       add :platform_post_id, :string
       add :generated_from_transcript, :boolean, default: true
 

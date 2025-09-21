@@ -21,17 +21,18 @@ if System.get_env("PHX_SERVER") do
 end
 
 if config_env() == :prod do
+  tzdata_dir = "/tmp/tzdata"
+  File.mkdir_p!(tzdata_dir)
+
+  config :tzdata, :data_dir, tzdata_dir
+
   database_url =
-    System.get_env("DATABASE_URL") ||
-      raise """
-      environment variable DATABASE_URL is missing.
-      For example: ecto://USER:PASS@HOST/DATABASE
-      """
+    System.get_env("DATABASE_URL") || ""
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
   config :cgenerator, SMG.Repo,
-    # ssl: true,
+    ssl: true,
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
     # For machines with several cores, consider starting multiple pools of `pool_size`
@@ -45,27 +46,23 @@ if config_env() == :prod do
   # variable instead.
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
-      raise """
-      environment variable SECRET_KEY_BASE is missing.
-      You can generate one by calling: mix phx.gen.secret
-      """
+      System.get_env("SECRET_KEY") ||
+      "GMAY+CVidwoYfuWd7KK6rDhP4Ozz6yYnZttALKkCW8Lj2YA7oY/IisJmHqe/PMbK"
 
-  host = System.get_env("PHX_HOST") || "example.com"
-  port = String.to_integer(System.get_env("PORT") || "4000")
+  host = System.get_env("PHX_HOST") || "sm-content-generator.fly.dev"
+  port = String.to_integer(System.get_env("PORT") || "8080")
 
   config :cgenerator, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   config :cgenerator, SMGWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+    url: [host: host, scheme: "https", port: 80],
     http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      # See the documentation on https://hexdocs.pm/bandit/Bandit.html#t:options/0
-      # for details about using IPv6 vs IPv4 and loopback vs public addresses.
-      ip: {0, 0, 0, 0, 0, 0, 0, 0},
+      # Bind on all IPv4 interfaces for Fly.io
+      ip: {0, 0, 0, 0},
       port: port
     ],
-    secret_key_base: secret_key_base
+    secret_key_base: secret_key_base,
+    server: true
 
   # ## SSL Support
   #
@@ -98,4 +95,16 @@ if config_env() == :prod do
   #       force_ssl: [hsts: true]
   #
   # Check `Plug.SSL` for all available options in `force_ssl`.
+
+  # Production OAuth redirect URIs
+  config :ueberauth, Ueberauth.Strategy.LinkedIn.OAuth,
+    client_id: System.get_env("LINKEDIN_CLIENT_ID"),
+    client_secret: System.get_env("LINKEDIN_CLIENT_SECRET"),
+    redirect_uri: "https://#{host}/auth/linkedin/callback"
+
+  config :ueberauth, Ueberauth.Strategy.Google.OAuth,
+    client_id: System.get_env("GOOGLE_CLIENT_ID"),
+    client_secret: System.get_env("GOOGLE_CLIENT_SECRET"),
+    scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly",
+    redirect_uri: "https://#{host}/auth/google/callback"
 end

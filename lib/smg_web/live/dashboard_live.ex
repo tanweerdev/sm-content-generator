@@ -12,7 +12,20 @@ defmodule SMGWeb.DashboardLive do
       socket
       |> assign(:user, user)
       |> assign(:loading, false)
+      |> assign(:reprocessing_event_id, nil)
       |> load_data()
+
+    # Auto-sync calendar if no events exist (likely first time or after reset)
+    # Only auto-sync if both upcoming and past events are empty
+    if Enum.empty?(socket.assigns.upcoming_events) and Enum.empty?(socket.assigns.past_events) do
+      case Accounts.list_user_google_accounts(user) do
+        [google_account | _] ->
+          send(self(), {:auto_sync_calendar, google_account.id})
+
+        [] ->
+          :ok
+      end
+    end
 
     {:ok, socket}
   end
@@ -71,17 +84,184 @@ defmodule SMGWeb.DashboardLive do
     {:noreply, redirect(socket, to: "/auth/google")}
   end
 
+  @impl true
+  def handle_event("reprocess_automation", %{"event_id" => event_id}, socket) do
+    event = Events.get_event!(event_id)
+
+    socket = assign(socket, :reprocessing_event_id, String.to_integer(event_id))
+
+    # Process in the background
+    parent_pid = self()
+
+    Task.start(fn ->
+      case SMG.AI.ContentGenerator.generate_social_content(event) do
+        {:ok, results} ->
+          post_count = length(results)
+          send(parent_pid, {:reprocess_completed, event.id, :success, post_count})
+
+        {:error, reason} ->
+          send(parent_pid, {:reprocess_completed, event.id, :error, reason})
+      end
+    end)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("sync_latest_events", _params, socket) do
+    user = socket.assigns.user
+
+    case Accounts.list_user_google_accounts(user) do
+      [google_account | _] ->
+        socket =
+          socket
+          |> assign(:loading, true)
+
+        # Get the current process PID to send messages back to
+        parent_pid = self()
+
+        Task.start(fn ->
+          try do
+            case GoogleCalendar.sync_events(google_account) do
+              {:ok, _results} ->
+                send(parent_pid, {:sync_completed, :success})
+
+              {:error, reason} ->
+                send(parent_pid, {:sync_completed, {:error, reason}})
+            end
+          rescue
+            error ->
+              # If sync fails with an exception, still reset the loading state
+              send(parent_pid, {:sync_completed, {:error, "Sync failed: #{inspect(error)}"}})
+          end
+        end)
+
+        # Add a timeout to reset loading state in case messages don't arrive
+        # 30 second timeout
+        Process.send_after(self(), {:sync_timeout}, 30_000)
+
+        {:noreply, socket}
+
+      [] ->
+        socket =
+          socket
+          |> put_flash(
+            :error,
+            "No Google account connected. Please connect your Google account first."
+          )
+
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_info({:auto_sync_calendar, account_id}, socket) do
+    account = Accounts.get_google_account(account_id)
+
+    socket =
+      socket
+      |> assign(:loading, true)
+
+    # Get the current process PID to send messages back to
+    parent_pid = self()
+
+    Task.start(fn ->
+      try do
+        case GoogleCalendar.sync_events(account) do
+          {:ok, _results} ->
+            send(parent_pid, {:sync_completed, :success})
+
+          {:error, reason} ->
+            send(parent_pid, {:sync_completed, {:error, reason}})
+        end
+      rescue
+        error ->
+          # If sync fails with an exception, still reset the loading state
+          send(parent_pid, {:sync_completed, {:error, "Auto-sync failed: #{inspect(error)}"}})
+      end
+    end)
+
+    # Add a timeout to reset loading state in case messages don't arrive
+    # 30 second timeout
+    Process.send_after(self(), {:sync_timeout}, 30_000)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:sync_completed, :success}, socket) do
+    socket =
+      socket
+      |> assign(:loading, false)
+      |> put_flash(:info, "Calendar synced successfully!")
+      |> load_data()
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:sync_completed, {:error, reason}}, socket) do
+    socket =
+      socket
+      |> assign(:loading, false)
+      |> put_flash(:error, "Failed to sync calendar: #{reason}")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:reprocess_completed, _event_id, :success, post_count}, socket) do
+    socket =
+      socket
+      |> assign(:reprocessing_event_id, nil)
+      |> put_flash(
+        :info,
+        "✨ Successfully generated #{post_count} social media post(s) for this meeting!"
+      )
+      |> load_data()
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:reprocess_completed, _event_id, :error, reason}, socket) do
+    socket =
+      socket
+      |> assign(:reprocessing_event_id, nil)
+      |> put_flash(:error, "Failed to reprocess automation: #{reason}")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:sync_timeout}, socket) do
+    # Only reset loading if it's still true (sync hasn't completed yet)
+    if socket.assigns.loading == true do
+      socket =
+        socket
+        |> assign(:loading, false)
+        |> put_flash(:error, "Sync operation timed out. Please try again.")
+
+      {:noreply, socket}
+    else
+      # Sync already completed, ignore timeout
+      {:noreply, socket}
+    end
+  end
+
   defp load_data(socket) do
     user = socket.assigns.user
 
     google_accounts = Accounts.list_user_google_accounts(user)
-    upcoming_events = Events.list_upcoming_events_for_user(user, 20)
+    upcoming_events = Events.list_upcoming_events_for_user(user, 5)
+    past_events = Events.list_past_events_for_user(user, 5)
     all_events = Events.list_events_for_user(user)
     draft_posts = Social.list_draft_posts_for_user(user)
 
     socket
     |> assign(:google_accounts, google_accounts)
     |> assign(:upcoming_events, upcoming_events)
+    |> assign(:past_events, past_events)
     |> assign(:all_events, all_events)
     |> assign(:draft_posts, draft_posts)
   end
@@ -89,230 +269,269 @@ defmodule SMGWeb.DashboardLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-gray-50 py-8">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <!-- Header -->
-        <div class="mb-8">
-          <div class="flex items-center justify-between">
-            <div>
-              <h1 class="text-3xl font-bold text-gray-900">
-                Welcome back, <%= @user.name || @user.email %>
-              </h1>
-              <p class="mt-1 text-sm text-gray-600">
-                Manage your meetings and generate social content
-              </p>
-            </div>
-            <div class="flex items-center space-x-4">
-              <%= if @user.avatar_url do %>
-                <img src={@user.avatar_url} alt="User avatar" class="w-10 h-10 rounded-full" />
-              <% else %>
-                <div class="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center">
-                  <span class="text-sm font-medium text-gray-600">
-                    <%= String.first(@user.name || @user.email) %>
-                  </span>
+    <div class="min-h-screen bg-white" style="background-color: white !important;">
+      <!-- Dashboard Navigation -->
+      <nav class="bg-white border-b border-gray-100 sticky top-0 z-10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div class="flex justify-between items-center h-16">
+            <!-- Logo/Brand -->
+            <div class="flex items-center space-x-3">
+              <.link href="/dashboard" class="flex items-center space-x-3">
+                <div class="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
+                  <span class="text-white font-bold text-lg">S</span>
                 </div>
-              <% end %>
-              <a href="/auth/logout" class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                Logout
+                <div>
+                  <h1 class="text-xl font-semibold text-black">SMG</h1>
+                </div>
+              </.link>
+            </div>
+            
+    <!-- Action Buttons -->
+            <div class="flex items-center space-x-4">
+              <!-- Sync Button -->
+              <button
+                phx-click="sync_latest_events"
+                disabled={@loading == true}
+                title={
+                  if @loading == true,
+                    do: "Syncing calendar events...",
+                    else: "Sync latest events from Google Calendar"
+                }
+                class={[
+                  "p-2 rounded-lg transition-colors",
+                  if(@loading == true,
+                    do: "bg-gray-100 text-gray-400 cursor-not-allowed",
+                    else: "text-gray-600 hover:text-green-600 hover:bg-gray-50"
+                  )
+                ]}
+              >
+                <%= if @loading == true do %>
+                  <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle
+                      class="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      stroke-width="4"
+                    >
+                    </circle>
+                    <path
+                      class="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    >
+                    </path>
+                  </svg>
+                <% else %>
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    >
+                    </path>
+                  </svg>
+                <% end %>
+              </button>
+              
+    <!-- Settings Button -->
+              <.link
+                href="/settings"
+                class="p-2 text-gray-600 hover:text-green-600 rounded-lg hover:bg-gray-50"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  >
+                  </path>
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  >
+                  </path>
+                </svg>
+              </.link>
+              
+    <!-- User Menu -->
+              <div class="flex items-center space-x-3">
+                <%= if @user.avatar_url do %>
+                  <img
+                    src={@user.avatar_url}
+                    alt="User avatar"
+                    class="w-8 h-8 rounded-full border border-gray-200"
+                  />
+                <% else %>
+                  <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center border border-green-200">
+                    <span class="text-sm font-semibold text-green-700">
+                      {String.first(@user.name || @user.email)}
+                    </span>
+                  </div>
+                <% end %>
+                <div class="hidden sm:block">
+                  <p class="text-sm font-medium text-black">
+                    {@user.name || String.split(@user.email, "@") |> List.first()}
+                  </p>
+                  <p class="text-xs text-gray-500">{@user.email}</p>
+                </div>
+              </div>
+              
+    <!-- Logout Button -->
+              <a
+                href="/auth/logout"
+                class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                  >
+                  </path>
+                </svg>
               </a>
             </div>
           </div>
         </div>
-
-        <!-- Google Accounts Section -->
-        <div class="bg-white overflow-hidden shadow rounded-lg mb-8">
-          <div class="px-4 py-5 sm:p-6">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-lg leading-6 font-medium text-gray-900">
-                Connected Google Accounts
-              </h3>
-              <button
-                phx-click="add_google_account"
-                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Connect Google Account
-              </button>
-            </div>
-
-            <%= if @google_accounts == [] do %>
-              <div class="text-center py-6">
-                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                  <path d="M34 40h10v-4a6 6 0 00-10.712-3.714M34 40H14m20 0v-4a9.971 9.971 0 00-.712-3.714M14 40H4v-4a6 6 0 0110.713-3.714M14 40v-4c0-1.313.253-2.566.713-3.714m0 0A9.971 9.971 0 0124 24c4.21 0 7.813 2.602 9.288 6.286" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-                <h3 class="mt-2 text-sm font-medium text-gray-900">No Google accounts connected</h3>
-                <p class="mt-1 text-sm text-gray-500">
-                  Connect your Google account to sync calendar events.
-                </p>
-              </div>
-            <% else %>
-              <div class="space-y-3">
-                <%= for account <- @google_accounts do %>
-                  <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                    <div class="flex items-center space-x-3">
-                      <div class="flex-shrink-0">
-                        <svg class="h-6 w-6 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
-                          <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <p class="text-sm font-medium text-gray-900"><%= account.email %></p>
-                        <p class="text-sm text-gray-500">Google Calendar</p>
-                      </div>
-                    </div>
-                    <button
-                      phx-click="sync_calendar"
-                      phx-value-account_id={account.id}
-                      class="inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                    >
-                      Sync Calendar
-                    </button>
-                  </div>
-                <% end %>
-              </div>
-            <% end %>
-          </div>
-        </div>
-
-        <!-- Main Content Grid -->
+      </nav>
+      
+    <!-- Main Content -->
+      <div
+        class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
+        style="background-color: white !important;"
+      >
+        
+    <!-- Main Content Grid -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <!-- Upcoming Events -->
-          <div class="bg-white overflow-hidden shadow rounded-lg">
-            <div class="px-4 py-5 sm:p-6">
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="text-lg leading-6 font-medium text-gray-900">
+          <div class="bg-white border border-gray-100 rounded-xl overflow-hidden">
+            <div class="px-6 py-5">
+              <div class="flex items-center justify-between mb-6">
+                <h3 class="text-lg font-semibold text-black">
                   Upcoming Events
                 </h3>
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                  <%= length(@upcoming_events) %> events
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  {length(@upcoming_events)} events
                 </span>
               </div>
 
               <%= if @upcoming_events == [] do %>
-                <div class="text-center py-6">
-                  <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                    <path d="M8 14v20c0 4.418 7.163 8 16 8 1.381 0 2.721-.087 4-.252M8 14c0 4.418 7.163 8 16 8s16-3.582 16-8M8 14c0-4.418 7.163-8 16-8s16 3.582 16 8m0 0v14m-16-5c0 4.418 7.163 8 16 8 1.381 0 2.721-.087 4-.252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                  <h3 class="mt-2 text-sm font-medium text-gray-900">No upcoming events</h3>
-                  <p class="mt-1 text-sm text-gray-500">
+                <div class="text-center py-8">
+                  <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg
+                      class="w-6 h-6 text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M8 7V3a1 1 0 011-1h6a1 1 0 011 1v4h4V3a1 1 0 011-1h6a1 1 0 011 1v4h2a2 2 0 012 2v1H6V9a2 2 0 012-2h0zM6 12v24a2 2 0 002 2h32a2 2 0 002-2V12H6z"
+                      />
+                    </svg>
+                  </div>
+                  <h3 class="text-sm font-medium text-black mb-1">No upcoming events</h3>
+                  <p class="text-sm text-gray-500">
                     Connect your Google Calendar to see upcoming events.
                   </p>
                 </div>
               <% else %>
                 <div class="space-y-4">
                   <%= for event <- @upcoming_events do %>
-                    <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                    <div class="border border-gray-100 rounded-lg p-4 hover:border-green-200 hover:bg-green-50 transition-all duration-200">
                       <div class="flex items-start justify-between">
                         <div class="flex-1">
-                          <div class="flex items-center space-x-2 mb-2">
-                            <h4 class="text-sm font-medium text-gray-900">
-                              <%= event.title || "Untitled Event" %>
-                            </h4>
-                            <%= if event.meeting_link do %>
-                              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                📞 Meeting
-                              </span>
-                            <% end %>
-                          </div>
-
-                          <div class="space-y-1">
-                            <p class="text-sm text-gray-600">
-                              <span class="font-medium">Start:</span> <%= format_datetime(event.start_time) %>
-                            </p>
-                            <%= if event.end_time do %>
-                              <p class="text-sm text-gray-600">
-                                <span class="font-medium">End:</span> <%= format_datetime(event.end_time) %>
-                              </p>
-                            <% end %>
-
-                            <%= if event.description do %>
-                              <p class="text-sm text-gray-500 mt-2 line-clamp-2">
-                                <%= String.slice(event.description, 0, 100) %><%= if String.length(event.description) > 100, do: "..." %>
-                              </p>
-                            <% end %>
-
-                            <%= if event.meeting_link do %>
-                              <div class="mt-2">
-                                <a href={event.meeting_link} target="_blank" class="text-xs text-indigo-600 hover:text-indigo-500 font-medium">
-                                  🔗 Join Meeting
-                                </a>
-                              </div>
-                            <% end %>
-                          </div>
-                        </div>
-
-                        <div class="ml-4 flex flex-col items-end space-y-2">
-                          <label class="inline-flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={event.notetaker_enabled}
-                              phx-click="toggle_notetaker"
-                              phx-value-event_id={event.id}
-                              class="form-checkbox h-4 w-4 text-indigo-600 transition duration-150 ease-in-out"
-                            />
-                            <span class="ml-2 text-sm text-gray-700">AI Notetaker</span>
-                          </label>
-
-                          <%= if event.transcript_status do %>
-                            <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{transcript_status_color(event.transcript_status)}"}>
-                              <%= String.capitalize(event.transcript_status) %>
+                          <div class="flex items-start justify-between mb-3">
+                            <div>
+                              <h4 class="text-sm font-semibold text-black mb-1">
+                                {event.title || "Untitled Event"}
+                              </h4>
+                              <%= if event.meeting_link do %>
+                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                  <svg
+                                    class="w-3 h-3 mr-1"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      stroke-linecap="round"
+                                      stroke-linejoin="round"
+                                      stroke-width="2"
+                                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                    />
+                                  </svg>
+                                  Video Meeting
+                                </span>
+                              <% end %>
+                            </div>
+                            <span class="text-xs font-medium text-gray-600">
+                              {format_datetime(event.start_time)}
                             </span>
-                          <% end %>
-                        </div>
-                      </div>
+                          </div>
 
-                      <div class="mt-3 pt-3 border-t border-gray-100">
-                        <div class="flex items-center justify-between text-xs text-gray-500">
-                          <span>Google Event ID: <%= event.google_event_id %></span>
-                          <span>Account: <%= event.google_account.email %></span>
-                        </div>
-                      </div>
-                    </div>
-                  <% end %>
-                </div>
-              <% end %>
-            </div>
-          </div>
+                          <div class="flex items-center justify-between">
+                            <div class="flex flex-col space-y-2 flex-1 min-w-0">
+                              <div class="flex items-center space-x-4 flex-wrap">
+                                <label class="inline-flex items-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={event.notetaker_enabled}
+                                    phx-click="toggle_notetaker"
+                                    phx-value-event_id={event.id}
+                                    class="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                                  />
+                                  <span class="ml-2 text-sm text-gray-700">AI Notetaker</span>
+                                </label>
 
-          <!-- Draft Posts -->
-          <div class="bg-white overflow-hidden shadow rounded-lg">
-            <div class="px-4 py-5 sm:p-6">
-              <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
-                Generated Content
-              </h3>
+                                <%= if event.transcript_status do %>
+                                  <span class={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium #{transcript_status_color(event.transcript_status)}"}>
+                                    {String.capitalize(event.transcript_status)}
+                                  </span>
+                                <% end %>
 
-              <%= if @draft_posts == [] do %>
-                <div class="text-center py-6">
-                  <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                    <path d="M9 12h6m6 0h6m-6 6h6m-6 6h6M9 18h6m-6 6h6m-6 6h6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                  <h3 class="mt-2 text-sm font-medium text-gray-900">No content generated yet</h3>
-                  <p class="mt-1 text-sm text-gray-500">
-                    Content will appear here after meetings with AI notetaker enabled.
-                  </p>
-                </div>
-              <% else %>
-                <div class="space-y-4">
-                  <%= for post <- @draft_posts do %>
-                    <div class="border border-gray-200 rounded-lg p-4">
-                      <div class="flex items-start justify-between mb-2">
-                        <div class="flex items-center space-x-2">
-                          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            <%= String.capitalize(post.platform) %>
-                          </span>
-                          <span class="text-xs text-gray-500">
-                            <%= if post.calendar_event do %>
-                              From: <%= post.calendar_event.title || "Meeting" %>
+                                <%= if event.attendee_count > 0 do %>
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    👥 {event.attendee_count} attendee{if event.attendee_count != 1,
+                                      do: "s"}
+                                  </span>
+                                <% end %>
+                              </div>
+
+                              <%= if event.attendee_count > 0 do %>
+                                <div class="w-full">
+                                  <div class="mt-2 break-all">
+                                    <%= for email <- event.attendee_emails do %>
+                                      <span class="inline-block px-2 py-1 rounded-md text-xs bg-blue-50 text-blue-700 border border-blue-200 max-w-full break-all">
+                                        {email}
+                                      </span>
+                                    <% end %>
+                                  </div>
+                                </div>
+                              <% end %>
+                            </div>
+
+                            <%= if event.meeting_link do %>
+                              <a
+                                href={event.meeting_link}
+                                target="_blank"
+                                class="text-green-600 hover:text-green-700 text-sm font-medium"
+                              >
+                                Join →
+                              </a>
                             <% end %>
-                          </span>
+                          </div>
                         </div>
-                        <.link href={"/posts/#{post.id}"} class="text-indigo-600 hover:text-indigo-500 text-sm font-medium">
-                          Edit & Post
-                        </.link>
                       </div>
-                      <p class="text-sm text-gray-900 line-clamp-3">
-                        <%= post.content %>
-                      </p>
                     </div>
                   <% end %>
                 </div>
@@ -320,115 +539,196 @@ defmodule SMGWeb.DashboardLive do
             </div>
           </div>
         </div>
-
-        <!-- All Calendar Events Section -->
+        
+    <!-- Past Events -->
         <div class="mt-8">
-          <div class="bg-white overflow-hidden shadow rounded-lg">
-            <div class="px-4 py-5 sm:p-6">
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="text-lg leading-6 font-medium text-gray-900">
-                  All Calendar Events
+          <div class="bg-white border border-gray-100 rounded-xl overflow-hidden">
+            <div class="px-6 py-5">
+              <div class="flex items-center justify-between mb-6">
+                <h3 class="text-lg font-semibold text-black">
+                  Recent Past Events
                 </h3>
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                  Synced from Google Calendar
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                  {length(@past_events)} events
                 </span>
               </div>
 
-              <%= if @all_events == [] do %>
-                <div class="text-center py-6">
-                  <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                    <path d="M8 14v20c0 4.418 7.163 8 16 8 1.381 0 2.721-.087 4-.252M8 14c0 4.418 7.163 8 16 8s16-3.582 16-8M8 14c0-4.418 7.163-8 16-8s16 3.582 16 8m0 0v14m-16-5c0 4.418 7.163 8 16 8 1.381 0 2.721-.087 4-.252" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                  <h3 class="mt-2 text-sm font-medium text-gray-900">No calendar events found</h3>
-                  <p class="mt-1 text-sm text-gray-500">
-                    Sync your Google Calendar to see all events here.
+              <%= if @past_events == [] do %>
+                <div class="text-center py-8">
+                  <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg
+                      class="w-6 h-6 text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M8 7V3a1 1 0 011-1h6a1 1 0 011 1v4h4V3a1 1 0 011-1h6a1 1 0 011 1v4h2a2 2 0 012 2v1H6V9a2 2 0 012-2h0zM6 12v24a2 2 0 002 2h32a2 2 0 002-2V12H6z"
+                      />
+                    </svg>
+                  </div>
+                  <h3 class="text-sm font-medium text-black mb-1">No past events</h3>
+                  <p class="text-sm text-gray-500">
+                    Past events will appear here after you sync your Google Calendar.
                   </p>
                 </div>
               <% else %>
-                <div class="overflow-hidden">
-                  <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                      <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Event</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                      <%= for event <- @all_events do %>
-                        <tr class="hover:bg-gray-50">
-                          <td class="px-6 py-4 whitespace-nowrap">
-                            <div class="flex items-center">
-                              <div class="flex-shrink-0 h-10 w-10">
-                                <div class="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
-                                  <svg class="h-5 w-5 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
-                                    <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+                <div class="space-y-4">
+                  <%= for event <- @past_events do %>
+                    <div class="border border-gray-100 rounded-lg p-4 hover:border-green-200 hover:bg-green-50 transition-all duration-200">
+                      <div class="flex items-start justify-between">
+                        <div class="flex-1">
+                          <div class="flex items-start justify-between mb-3">
+                            <div>
+                              <h4 class="text-sm font-semibold text-black mb-1">
+                                {event.title || "Untitled Event"}
+                              </h4>
+                              <%= if event.meeting_link do %>
+                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                                  <svg
+                                    class="w-3 h-3 mr-1"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      stroke-linecap="round"
+                                      stroke-linejoin="round"
+                                      stroke-width="2"
+                                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                    />
                                   </svg>
-                                </div>
-                              </div>
-                              <div class="ml-4">
-                                <div class="text-sm font-medium text-gray-900">
-                                  <%= event.title || "Untitled Event" %>
-                                </div>
-                                <div class="text-sm text-gray-500">
-                                  <%= if event.description do %>
-                                    <%= String.slice(event.description, 0, 50) %><%= if String.length(event.description) > 50, do: "..." %>
-                                  <% else %>
-                                    No description
-                                  <% end %>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td class="px-6 py-4 whitespace-nowrap">
-                            <div class="text-sm text-gray-900">
-                              <%= format_datetime(event.start_time) %>
-                            </div>
-                            <%= if event.end_time do %>
-                              <div class="text-sm text-gray-500">
-                                to <%= format_datetime(event.end_time) %>
-                              </div>
-                            <% end %>
-                          </td>
-                          <td class="px-6 py-4 whitespace-nowrap">
-                            <div class="flex flex-col space-y-1">
-                              <%= if event.meeting_link do %>
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                  📞 Has Meeting
-                                </span>
-                              <% end %>
-                              <%= if event.transcript_status do %>
-                                <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{transcript_status_color(event.transcript_status)}"}>
-                                  <%= String.capitalize(event.transcript_status) %>
+                                  Had Video Meeting
                                 </span>
                               <% end %>
                             </div>
-                          </td>
-                          <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <div class="flex items-center space-x-2">
-                              <label class="inline-flex items-center">
-                                <input
-                                  type="checkbox"
-                                  checked={event.notetaker_enabled}
-                                  phx-click="toggle_notetaker"
+                            <span class="text-xs font-medium text-gray-600">
+                              {format_datetime(event.start_time)}
+                            </span>
+                          </div>
+
+                          <div class="flex items-center justify-between">
+                            <div class="flex flex-col space-y-2 flex-1 min-w-0">
+                              <div class="flex items-center space-x-4 flex-wrap">
+                                <%= if event.transcript_status do %>
+                                  <span class={"inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium #{transcript_status_color(event.transcript_status)}"}>
+                                    {String.capitalize(event.transcript_status)}
+                                  </span>
+                                <% end %>
+
+                                <%= if event.attendee_count > 0 do %>
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    👥 {event.attendee_count} attendee{if event.attendee_count != 1,
+                                      do: "s"}
+                                  </span>
+                                <% end %>
+
+                                <%= if length(event.social_posts) > 0 do %>
+                                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    📱 {length(event.social_posts)} Post(s)
+                                  </span>
+                                <% end %>
+                              </div>
+
+                              <%= if event.attendee_count > 0 do %>
+                                <div class="w-full">
+                                  <div class="mt-2 max-h-24 overflow-y-auto">
+                                    <%= for email <- event.attendee_emails do %>
+                                      <span class="inline-block px-2 py-1 my-1 rounded-md text-xs bg-blue-50 text-blue-700 border border-blue-200 break-all max-w-full">
+                                        {email}
+                                      </span>
+                                    <% end %>
+                                  </div>
+                                </div>
+                              <% end %>
+                            </div>
+
+                            <div class="flex items-center space-x-3">
+                              <%= if event.notetaker_enabled do %>
+                                <button
+                                  phx-click="reprocess_automation"
                                   phx-value-event_id={event.id}
-                                  class="form-checkbox h-4 w-4 text-indigo-600 transition duration-150 ease-in-out"
-                                />
-                                <span class="ml-2 text-sm text-gray-700">AI Notetaker</span>
-                              </label>
-                              <%= if event.meeting_link do %>
-                                <a href={event.meeting_link} target="_blank" class="text-indigo-600 hover:text-indigo-500 text-sm">
-                                  Join
-                                </a>
+                                  disabled={@reprocessing_event_id == event.id}
+                                  class={[
+                                    "inline-flex items-center px-3 py-1 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500",
+                                    if(@reprocessing_event_id == event.id,
+                                      do: "opacity-50 cursor-not-allowed"
+                                    )
+                                  ]}
+                                  title={
+                                    if @reprocessing_event_id == event.id,
+                                      do: "Reprocessing automation...",
+                                      else: "Reprocess automation for this meeting"
+                                  }
+                                >
+                                  <%= if @reprocessing_event_id == event.id do %>
+                                    <svg
+                                      class="animate-spin w-3 h-3 mr-1"
+                                      fill="none"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <circle
+                                        class="opacity-25"
+                                        cx="12"
+                                        cy="12"
+                                        r="10"
+                                        stroke="currentColor"
+                                        stroke-width="4"
+                                      >
+                                      </circle>
+                                      <path
+                                        class="opacity-75"
+                                        fill="currentColor"
+                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                      >
+                                      </path>
+                                    </svg>
+                                    Reprocessing...
+                                  <% else %>
+                                    <svg
+                                      class="w-3 h-3 mr-1"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        stroke-width="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                      >
+                                      </path>
+                                    </svg>
+                                    Reprocess
+                                  <% end %>
+                                </button>
                               <% end %>
+
+                              <.link
+                                href={"/meetings/#{event.id}"}
+                                class="text-green-600 hover:text-green-700 text-sm font-medium"
+                              >
+                                View Details →
+                              </.link>
                             </div>
-                          </td>
-                        </tr>
-                      <% end %>
-                    </tbody>
-                  </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  <% end %>
+                </div>
+                
+    <!-- View All Past Events Link -->
+                <div class="mt-6 text-center">
+                  <.link
+                    href="/meetings"
+                    class="inline-flex items-center px-4 py-2 border border-green-300 shadow-sm text-sm font-medium rounded-md text-green-700 bg-white hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  >
+                    View All Past Meetings
+                  </.link>
                 </div>
               <% end %>
             </div>
@@ -450,4 +750,25 @@ defmodule SMGWeb.DashboardLive do
   defp transcript_status_color("scheduled"), do: "bg-yellow-100 text-yellow-800"
   defp transcript_status_color("failed"), do: "bg-red-100 text-red-800"
   defp transcript_status_color(_), do: "bg-gray-100 text-gray-800"
+
+  defp platform_badge_color("linkedin"), do: "bg-blue-100 text-blue-800"
+  defp platform_badge_color("facebook"), do: "bg-indigo-100 text-indigo-800"
+  defp platform_badge_color(_), do: "bg-gray-100 text-gray-800"
+
+  defp format_attendee_tooltip(attendee_emails) when is_list(attendee_emails) do
+    case attendee_emails do
+      [] ->
+        "No attendee emails available"
+
+      emails when length(emails) <= 5 ->
+        "Attendees: " <> Enum.join(emails, ", ")
+
+      emails ->
+        first_five = Enum.take(emails, 5)
+        remaining = length(emails) - 5
+        "Attendees: " <> Enum.join(first_five, ", ") <> " and #{remaining} more"
+    end
+  end
+
+  defp format_attendee_tooltip(_), do: "No attendee emails available"
 end

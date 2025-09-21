@@ -13,8 +13,11 @@ defmodule SMG.Repo.Migrations.CreateCalendarEvents do
       add :meeting_link, :string
       add :notetaker_enabled, :boolean, default: false
       add :recall_bot_id, :string
-      add :transcript_url, :string
+      # Changed from :string to :text
+      add :transcript_url, :text
       add :transcript_status, :string
+      add :attendee_count, :integer, default: 0
+      add :attendee_emails, {:array, :string}, default: []
 
       timestamps()
     end

@@ -17,6 +17,8 @@ defmodule SMG.Events.CalendarEvent do
     field :recall_bot_id, :string
     field :transcript_url, :string
     field :transcript_status, :string
+    field :attendee_count, :integer, default: 0
+    field :attendee_emails, {:array, :string}, default: []
 
     belongs_to :google_account, GoogleAccount
     has_many :social_posts, SocialPost
@@ -28,9 +30,20 @@ defmodule SMG.Events.CalendarEvent do
   def changeset(calendar_event, attrs) do
     calendar_event
     |> cast(attrs, [
-      :google_event_id, :title, :description, :start_time, :end_time,
-      :zoom_link, :meeting_link, :notetaker_enabled, :recall_bot_id,
-      :transcript_url, :transcript_status, :google_account_id
+      :google_event_id,
+      :title,
+      :description,
+      :start_time,
+      :end_time,
+      :zoom_link,
+      :meeting_link,
+      :notetaker_enabled,
+      :recall_bot_id,
+      :transcript_url,
+      :transcript_status,
+      :google_account_id,
+      :attendee_count,
+      :attendee_emails
     ])
     |> validate_required([:google_event_id, :google_account_id])
     |> unique_constraint(:google_event_id)
@@ -46,10 +59,13 @@ defmodule SMG.Events.CalendarEvent do
     cond do
       String.match?(description, zoom_regex) ->
         Regex.run(zoom_regex, description) |> List.first()
+
       String.match?(description, meet_regex) ->
         Regex.run(meet_regex, description) |> List.first()
+
       String.match?(description, teams_regex) ->
         Regex.run(teams_regex, description) |> List.first()
+
       true ->
         nil
     end

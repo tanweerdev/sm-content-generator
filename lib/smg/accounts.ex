@@ -44,18 +44,20 @@ defmodule SMG.Accounts do
   def upsert_user_with_google_account(user_params, google_params) do
     Repo.transaction(fn ->
       # First, try to find existing user by email
-      user = case get_user_by_email(user_params.email) do
-        nil ->
-          case create_user(user_params) do
-            {:ok, user} -> user
-            {:error, changeset} -> Repo.rollback(changeset)
-          end
-        existing_user ->
-          case update_user(existing_user, user_params) do
-            {:ok, user} -> user
-            {:error, changeset} -> Repo.rollback(changeset)
-          end
-      end
+      user =
+        case get_user_by_email(user_params.email) do
+          nil ->
+            case create_user(user_params) do
+              {:ok, user} -> user
+              {:error, changeset} -> Repo.rollback(changeset)
+            end
+
+          existing_user ->
+            case update_user(existing_user, user_params) do
+              {:ok, user} -> user
+              {:error, changeset} -> Repo.rollback(changeset)
+            end
+        end
 
       # Now handle the Google account
       google_params = Map.put(google_params, :user_id, user.id)
@@ -66,6 +68,7 @@ defmodule SMG.Accounts do
             {:ok, _google_account} -> user
             {:error, changeset} -> Repo.rollback(changeset)
           end
+
         existing_google_account ->
           case update_google_account(existing_google_account, google_params) do
             {:ok, _google_account} -> user
