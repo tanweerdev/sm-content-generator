@@ -301,7 +301,7 @@ defmodule SMGWeb.MeetingDetailLive do
     <div class="min-h-screen bg-white" style="background-color: white !important;">
       <!-- Navigation -->
       <.navbar current_user={@user} />
-
+      
     <!-- Main Content -->
       <div
         class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
@@ -377,15 +377,15 @@ defmodule SMGWeb.MeetingDetailLive do
             </div>
           </div>
         </div>
-
+        
     <!-- Tabs -->
         <div class="mb-6">
           <div class="border-b border-gray-200">
-            <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+            <nav class="-mb-px flex space-x-2" aria-label="Tabs">
               <button
                 phx-click="switch_tab"
                 phx-value-tab="overview"
-                class={"#{if @active_tab == "overview", do: "border-green-500 text-green-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"}
+                class={"#{if @active_tab == "overview", do: "bg-green-100 border-green-500 text-green-700 shadow-sm", else: "bg-white border-gray-200 text-gray-600 hover:text-gray-800 hover:bg-gray-50"} whitespace-nowrap py-3 px-4 border rounded-lg font-medium text-sm transition-all duration-150"}
               >
                 Overview
               </button>
@@ -393,7 +393,7 @@ defmodule SMGWeb.MeetingDetailLive do
                 <button
                   phx-click="switch_tab"
                   phx-value-tab="transcript"
-                  class={"#{if @active_tab == "transcript", do: "border-green-500 text-green-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"}
+                  class={"#{if @active_tab == "transcript", do: "bg-green-100 border-green-500 text-green-700 shadow-sm", else: "bg-white border-gray-200 text-gray-600 hover:text-gray-800 hover:bg-gray-50"} whitespace-nowrap py-3 px-4 border rounded-lg font-medium text-sm transition-all duration-150"}
                 >
                   Transcript
                 </button>
@@ -401,21 +401,21 @@ defmodule SMGWeb.MeetingDetailLive do
               <button
                 phx-click="switch_tab"
                 phx-value-tab="social"
-                class={"#{if @active_tab == "social", do: "border-green-500 text-green-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"}
+                class={"#{if @active_tab == "social", do: "bg-green-100 border-green-500 text-green-700 shadow-sm", else: "bg-white border-gray-200 text-gray-600 hover:text-gray-800 hover:bg-gray-50"} whitespace-nowrap py-3 px-4 border rounded-lg font-medium text-sm transition-all duration-150"}
               >
                 Social Content ({length(@meeting.social_posts)})
               </button>
               <button
                 phx-click="switch_tab"
                 phx-value-tab="email"
-                class={"#{if @active_tab == "email", do: "border-green-500 text-green-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"}
+                class={"#{if @active_tab == "email", do: "bg-green-100 border-green-500 text-green-700 shadow-sm", else: "bg-white border-gray-200 text-gray-600 hover:text-gray-800 hover:bg-gray-50"} whitespace-nowrap py-3 px-4 border rounded-lg font-medium text-sm transition-all duration-150"}
               >
                 Follow-up Email
               </button>
             </nav>
           </div>
         </div>
-
+        
     <!-- Tab Content -->
         <%= case @active_tab do %>
           <% "overview" -> %>
@@ -504,7 +504,7 @@ defmodule SMGWeb.MeetingDetailLive do
                   </dl>
                 </div>
               </div>
-
+              
     <!-- Quick Actions -->
               <div class="bg-white overflow-hidden shadow rounded-lg">
                 <div class="px-4 py-5 sm:p-6">

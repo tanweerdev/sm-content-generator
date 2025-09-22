@@ -12,6 +12,8 @@ defmodule SMGWeb.MeetingsLive do
       socket
       |> assign(:user, user)
       |> assign(:filter, "all")
+      # Default timezone
+      |> assign(:user_timezone, "America/New_York")
       |> load_meetings()
 
     {:ok, socket}
@@ -32,6 +34,12 @@ defmodule SMGWeb.MeetingsLive do
   @impl true
   def handle_event("filter_meetings", %{"filter" => filter}, socket) do
     {:noreply, push_patch(socket, to: "/meetings?filter=#{filter}")}
+  end
+
+  @impl true
+  def handle_event("timezone_detected", %{"timezone" => timezone}, socket) do
+    # Store the user's detected timezone
+    {:noreply, assign(socket, :user_timezone, timezone)}
   end
 
   @impl true
@@ -117,10 +125,15 @@ defmodule SMGWeb.MeetingsLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-white" style="background-color: white !important;">
+    <div
+      class="min-h-screen bg-white"
+      style="background-color: white !important;"
+      phx-hook="TimezoneDetector"
+      id="meetings-timezone-detector"
+    >
       <!-- Navigation -->
       <.navbar current_user={@user} />
-
+      
     <!-- Main Content -->
       <div
         class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
@@ -135,43 +148,43 @@ defmodule SMGWeb.MeetingsLive do
             </p>
           </div>
         </div>
-
+        
     <!-- Filter Tabs -->
         <div class="mb-6">
           <div class="border-b border-gray-200">
-            <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+            <nav class="-mb-px flex space-x-2" aria-label="Tabs">
               <button
                 phx-click="filter_meetings"
                 phx-value-filter="all"
-                class={"#{if @filter == "all", do: "border-green-500 text-green-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"}
+                class={"#{if @filter == "all", do: "bg-green-100 border-green-500 text-green-700 shadow-sm", else: "bg-white border-gray-200 text-gray-600 hover:text-gray-800 hover:bg-gray-50"} whitespace-nowrap py-3 px-4 border rounded-lg font-medium text-sm transition-all duration-150"}
               >
                 All Meetings
               </button>
               <button
                 phx-click="filter_meetings"
                 phx-value-filter="with_transcript"
-                class={"#{if @filter == "with_transcript", do: "border-green-500 text-green-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"}
+                class={"#{if @filter == "with_transcript", do: "bg-green-100 border-green-500 text-green-700 shadow-sm", else: "bg-white border-gray-200 text-gray-600 hover:text-gray-800 hover:bg-gray-50"} whitespace-nowrap py-3 px-4 border rounded-lg font-medium text-sm transition-all duration-150"}
               >
                 With Transcripts
               </button>
               <button
                 phx-click="filter_meetings"
                 phx-value-filter="with_social_posts"
-                class={"#{if @filter == "with_social_posts", do: "border-green-500 text-green-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"}
+                class={"#{if @filter == "with_social_posts", do: "bg-green-100 border-green-500 text-green-700 shadow-sm", else: "bg-white border-gray-200 text-gray-600 hover:text-gray-800 hover:bg-gray-50"} whitespace-nowrap py-3 px-4 border rounded-lg font-medium text-sm transition-all duration-150"}
               >
                 With Social Content
               </button>
               <button
                 phx-click="filter_meetings"
                 phx-value-filter="scheduled_notetaker"
-                class={"#{if @filter == "scheduled_notetaker", do: "border-green-500 text-green-600", else: "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"} whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"}
+                class={"#{if @filter == "scheduled_notetaker", do: "bg-green-100 border-green-500 text-green-700 shadow-sm", else: "bg-white border-gray-200 text-gray-600 hover:text-gray-800 hover:bg-gray-50"} whitespace-nowrap py-3 px-4 border rounded-lg font-medium text-sm transition-all duration-150"}
               >
                 AI Notetaker Enabled
               </button>
             </nav>
           </div>
         </div>
-
+        
     <!-- Meetings List -->
         <%= if @meetings == [] do %>
           <div class="text-center py-12">
@@ -216,19 +229,44 @@ defmodule SMGWeb.MeetingsLive do
                           <div class="flex-1 min-w-0">
                             <div class="flex items-center space-x-3">
                               <div class="flex-shrink-0">
-                                <div class="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                                  <svg
-                                    class="h-5 w-5 text-blue-600"
-                                    fill="currentColor"
-                                    viewBox="0 0 20 20"
-                                  >
-                                    <path
-                                      fill-rule="evenodd"
-                                      d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
-                                      clip-rule="evenodd"
-                                    />
-                                  </svg>
-                                </div>
+                                <%= cond do %>
+                                  <% meeting.meeting_link && String.contains?(meeting.meeting_link, "zoom") -> %>
+                                    <div class="h-8 w-8 rounded-lg">
+                                      <img src={~p"/images/zoom.png"} width="36" />
+                                    </div>
+                                  <% meeting.meeting_link && String.contains?(meeting.meeting_link, "meet.google") -> %>
+                                    <div class="h-8 w-8 rounded-lg">
+                                      <img src={~p"/images/google_meet.png"} width="36" />
+                                    </div>
+                                  <% meeting.meeting_link && String.contains?(meeting.meeting_link, "teams") -> %>
+                                    <div class="h-8 w-8 rounded-lg bg-purple-500 flex items-center justify-center shadow-sm border-2 border-purple-600">
+                                      <svg
+                                        class="h-5 w-5 text-white"
+                                        viewBox="0 0 24 24"
+                                        fill="currentColor"
+                                      >
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.94-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+                                      </svg>
+                                    </div>
+                                  <% meeting.meeting_link -> %>
+                                    <div class="h-8 w-8 rounded-lg bg-gray-400 flex items-center justify-center shadow-sm border-2 border-gray-500">
+                                      <svg
+                                        class="h-5 w-5 text-white"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                          stroke-width="2"
+                                          d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                        />
+                                      </svg>
+                                    </div>
+                                  <% true -> %>
+                                    <span></span>
+                                <% end %>
                               </div>
                               <div class="flex-1 min-w-0">
                                 <p class="text-sm font-medium text-gray-900 truncate">
@@ -236,7 +274,7 @@ defmodule SMGWeb.MeetingsLive do
                                 </p>
                                 <div class="flex items-center space-x-2 mt-1">
                                   <p class="text-sm text-blue-600 font-medium">
-                                    {format_datetime(meeting.start_time)}
+                                    {format_datetime(meeting.start_time, @user_timezone)}
                                   </p>
                                   <span class="text-gray-300">•</span>
                                   <p class="text-sm text-gray-500">
@@ -262,7 +300,7 @@ defmodule SMGWeb.MeetingsLive do
               </div>
             </div>
           <% end %>
-
+          
     <!-- Past Meetings -->
           <%= if @past_meetings != [] do %>
             <div>
@@ -278,28 +316,41 @@ defmodule SMGWeb.MeetingsLive do
                               <div class="flex-shrink-0">
                                 <%= cond do %>
                                   <% meeting.meeting_link && String.contains?(meeting.meeting_link, "zoom") -> %>
-                                    <div class="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-                                      <span class="text-blue-600 font-medium text-sm">Zoom</span>
+                                    <div class="h-8 w-8 rounded-lg">
+                                      <img src={~p"/images/zoom.png"} width="36" />
                                     </div>
                                   <% meeting.meeting_link && String.contains?(meeting.meeting_link, "meet.google") -> %>
-                                    <div class="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
-                                      <span class="text-green-600 font-medium text-sm">Meet</span>
+                                    <div class="h-8 w-8 rounded-lg">
+                                      <img src={~p"/images/google_meet.png"} width="36" />
                                     </div>
                                   <% meeting.meeting_link && String.contains?(meeting.meeting_link, "teams") -> %>
-                                    <div class="h-10 w-10 rounded-full bg-purple-100 flex items-center justify-center">
-                                      <span class="text-purple-600 font-medium text-sm">Teams</span>
-                                    </div>
-                                  <% true -> %>
-                                    <div class="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center">
+                                    <div class="h-8 w-8 rounded-lg bg-purple-500 flex items-center justify-center shadow-sm border-2 border-purple-600">
                                       <svg
-                                        class="h-5 w-5 text-gray-600"
+                                        class="h-5 w-5 text-white"
+                                        viewBox="0 0 24 24"
                                         fill="currentColor"
-                                        viewBox="0 0 20 20"
                                       >
-                                        <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
-                                        <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.94-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
                                       </svg>
                                     </div>
+                                  <% meeting.meeting_link -> %>
+                                    <div class="h-8 w-8 rounded-lg bg-gray-400 flex items-center justify-center shadow-sm border-2 border-gray-500">
+                                      <svg
+                                        class="h-5 w-5 text-white"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                          stroke-width="2"
+                                          d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                        />
+                                      </svg>
+                                    </div>
+                                  <% true -> %>
+                                    <span></span>
                                 <% end %>
                               </div>
 
@@ -309,7 +360,7 @@ defmodule SMGWeb.MeetingsLive do
                                 </p>
                                 <div class="flex items-center space-x-2 mt-1">
                                   <p class="text-sm text-gray-500">
-                                    {format_datetime(meeting.start_time)}
+                                    {format_datetime(meeting.start_time, @user_timezone)}
                                   </p>
                                   <span class="text-gray-300">•</span>
                                   <p class="text-sm text-gray-500">
@@ -318,7 +369,7 @@ defmodule SMGWeb.MeetingsLive do
                                 </div>
                               </div>
                             </div>
-
+                            
     <!-- Meeting Description -->
                             <%= if meeting.description && String.length(meeting.description) > 0 do %>
                               <div class="mt-2">
@@ -330,7 +381,7 @@ defmodule SMGWeb.MeetingsLive do
                                 </p>
                               </div>
                             <% end %>
-
+                            
     <!-- Status Badges -->
                             <div class="space-y-3 mt-3">
                               <div class="flex items-center space-x-2">
@@ -374,7 +425,7 @@ defmodule SMGWeb.MeetingsLive do
                               <% end %>
                             </div>
                           </div>
-
+                          
     <!-- Actions -->
                           <div class="flex flex-col space-y-2">
                             <.link
@@ -410,9 +461,19 @@ defmodule SMGWeb.MeetingsLive do
 
   defp format_datetime(nil), do: "No date"
 
-  defp format_datetime(datetime) do
-    datetime
-    |> Calendar.strftime("%B %d, %Y at %I:%M %p")
+  defp format_datetime(datetime, timezone \\ "America/New_York") do
+    # Try to convert to user's timezone, fallback to UTC if timezone conversion fails
+    try do
+      local_datetime = DateTime.shift_zone!(datetime, timezone)
+
+      local_datetime
+      |> Calendar.strftime("%B %d, %Y at %I:%M %p %Z")
+    rescue
+      _ ->
+        # Fallback to UTC if timezone conversion fails
+        datetime
+        |> Calendar.strftime("%B %d, %Y at %I:%M %p UTC")
+    end
   end
 
   defp transcript_status_color("completed"), do: "bg-green-100 text-green-800"

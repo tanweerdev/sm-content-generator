@@ -20,6 +20,11 @@ config :cgenerator, SMGWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4090")],
+  url: [
+    scheme: System.get_env("SCHEME") || "http",
+    host: System.get_env("SERVER_HOST") || "localhost",
+    port: String.to_integer(System.get_env("URL_PORT") || "4090")
+  ],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
@@ -84,18 +89,23 @@ config :phoenix_live_view,
   enable_expensive_runtime_checks: true
 
 # Configure Recall.ai webhook URL for development
-config :cgenerator, :recall_webhook_url, "http://jump.mynotifire.com/webhooks/recall"
+config :cgenerator, :recall_webhook_url, "https://jump.mynotifire.com/webhooks/recall"
 
 # Development OAuth redirect URIs
 config :ueberauth, Ueberauth.Strategy.LinkedIn.OAuth,
   client_id: System.get_env("LINKEDIN_CLIENT_ID"),
-  client_secret: System.get_env("LINKEDIN_CLIENT_SECRET"),
-  redirect_uri: "http://jump.mynotifire.com/auth/linkedin/callback"
+  client_secret: System.get_env("LINKEDIN_CLIENT_SECRET")
 
 config :ueberauth, Ueberauth.Strategy.Google.OAuth,
   client_id: System.get_env("GOOGLE_CLIENT_ID"),
   client_secret: System.get_env("GOOGLE_CLIENT_SECRET"),
   scope: "openid email profile https://www.googleapis.com/auth/calendar.readonly",
-  redirect_uri: "http://jump.mynotifire.com/auth/google/callback",
   prompt: "consent select_account",
   access_type: "offline"
+
+# Guardian configuration
+config :cgenerator, SMG.Auth.Guardian,
+  issuer: "cgenerator",
+  secret_key: "gMbPgy789RCV2vhmpFc39xcfs2SlHY+Jc54VNglquLzhao9P/XhNAyj3cIJcLaQa",
+  ttl: {1, :day},
+  allowed_algos: ["HS256"]

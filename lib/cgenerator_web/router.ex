@@ -8,7 +8,15 @@ defmodule SMGWeb.Router do
     plug :put_root_layout, html: {SMGWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
-    plug SMGWeb.AuthPlug
+
+    plug Guardian.Plug.Pipeline,
+      module: SMG.Auth.Guardian,
+      error_handler: SMGWeb.GuardianErrorHandler
+
+    plug Guardian.Plug.VerifySession
+    plug Guardian.Plug.VerifyHeader, realm: "Bearer"
+    plug Guardian.Plug.LoadResource, allow_blank: true
+    plug SMGWeb.GuardianAuthPlug
   end
 
   pipeline :auth do
@@ -18,11 +26,19 @@ defmodule SMGWeb.Router do
     plug :put_root_layout, html: {SMGWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
-    plug SMGWeb.AuthPlug
+
+    plug Guardian.Plug.Pipeline,
+      module: SMG.Auth.Guardian,
+      error_handler: SMGWeb.GuardianErrorHandler
+
+    plug Guardian.Plug.VerifySession
+    plug Guardian.Plug.VerifyHeader, realm: "Bearer"
+    plug Guardian.Plug.LoadResource, allow_blank: true
+    plug SMGWeb.GuardianAuthPlug
   end
 
   pipeline :require_auth do
-    plug SMGWeb.AuthPlug, :require_auth
+    plug SMGWeb.GuardianAuthPlug, :require_auth
   end
 
   pipeline :api do

@@ -13,24 +13,20 @@ defmodule SMGWeb.DashboardLive do
       |> assign(:user, user)
       |> assign(:loading, false)
       |> assign(:reprocessing_event_id, nil)
+      # Default timezone
+      |> assign(:user_timezone, "America/New_York")
       |> load_data()
 
-    # Auto-sync calendar if no events exist (likely first time or after reset)
-    # Only auto-sync if both upcoming and past events are empty
-    if Enum.empty?(socket.assigns.upcoming_events) and Enum.empty?(socket.assigns.past_events) do
-      case Accounts.list_user_google_accounts(user) do
-        google_accounts = [google_account | _] ->
-          Enum.each(google_accounts, fn account ->
-            if account do
-              Task.start(fn ->
-                send(self(), {:auto_sync_calendar, google_account.id})
-              end)
-            end
-          end)
+    case Accounts.list_user_google_accounts(user) do
+      google_accounts = [google_account | _] ->
+        Enum.each(google_accounts, fn account ->
+          if account do
+            send(self(), {:auto_sync_calendar, google_account.id})
+          end
+        end)
 
-        [] ->
-          :ok
-      end
+      [] ->
+        :ok
     end
 
     {:ok, socket}
@@ -114,6 +110,12 @@ defmodule SMGWeb.DashboardLive do
   end
 
   @impl true
+  def handle_event("timezone_detected", %{"timezone" => timezone}, socket) do
+    # Store the user's detected timezone
+    {:noreply, assign(socket, :user_timezone, timezone)}
+  end
+
+  @impl true
   def handle_event("sync_latest_events", _params, socket) do
     user = socket.assigns.user
 
@@ -171,7 +173,6 @@ defmodule SMGWeb.DashboardLive do
       socket
       |> assign(:loading, true)
 
-    # Get the current process PID to send messages back to
     parent_pid = self()
 
     Task.start(fn ->
@@ -278,10 +279,15 @@ defmodule SMGWeb.DashboardLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-white" style="background-color: white !important;">
+    <div
+      class="min-h-screen bg-white"
+      style="background-color: white !important;"
+      phx-hook="TimezoneDetector"
+      id="timezone-detector"
+    >
       <!-- Flash Messages -->
       <SMGWeb.Layouts.flash_group flash={@flash} />
-
+      
     <!-- Dashboard Navigation -->
       <nav class="bg-white border-b border-gray-100 sticky top-0 z-10">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -297,7 +303,7 @@ defmodule SMGWeb.DashboardLive do
                 </div>
               </.link>
             </div>
-
+            
     <!-- Action Buttons -->
             <div class="flex items-center space-x-4">
               <!-- Sync Button -->
@@ -347,7 +353,7 @@ defmodule SMGWeb.DashboardLive do
                   </svg>
                 <% end %>
               </button>
-
+              
     <!-- Settings Button -->
               <.link
                 href="/settings"
@@ -370,7 +376,7 @@ defmodule SMGWeb.DashboardLive do
                   </path>
                 </svg>
               </.link>
-
+              
     <!-- User Menu -->
               <div class="flex items-center space-x-3">
                 <%= if @user.avatar_url do %>
@@ -393,7 +399,7 @@ defmodule SMGWeb.DashboardLive do
                   <p class="text-xs text-gray-500">{@user.email}</p>
                 </div>
               </div>
-
+              
     <!-- Logout Button -->
               <a
                 href="/auth/logout"
@@ -413,13 +419,13 @@ defmodule SMGWeb.DashboardLive do
           </div>
         </div>
       </nav>
-
+      
     <!-- Main Content -->
       <div
         class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
         style="background-color: white !important;"
       >
-
+        
     <!-- Main Content Grid -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <!-- Upcoming Events -->
@@ -464,30 +470,52 @@ defmodule SMGWeb.DashboardLive do
                         <div class="flex-1">
                           <div class="flex items-start justify-between mb-3">
                             <div>
-                              <h4 class="text-sm font-semibold text-black mb-1">
-                                {event.title || "Untitled Event"}
-                              </h4>
-                              <%= if event.meeting_link do %>
-                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                                  <svg
-                                    class="w-3 h-3 mr-1"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      stroke-linecap="round"
-                                      stroke-linejoin="round"
-                                      stroke-width="2"
-                                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                                    />
-                                  </svg>
-                                  Video Meeting
-                                </span>
-                              <% end %>
+                              <div class="flex items-center space-x-3 mb-1">
+                                <h4 class="text-sm font-semibold text-black">
+                                  {event.title || "Untitled Event"}
+                                </h4>
+                                <%= cond do %>
+                                  <% event.meeting_link && String.contains?(event.meeting_link, "zoom") -> %>
+                                    <div class="h-8 w-8 rounded-lg">
+                                      <img src={~p"/images/zoom.png"} width="36" />
+                                    </div>
+                                  <% event.meeting_link && String.contains?(event.meeting_link, "meet.google") -> %>
+                                    <div class="h-8 w-8 rounded-lg">
+                                      <img src={~p"/images/google_meet.png"} width="36" />
+                                    </div>
+                                  <% event.meeting_link && String.contains?(event.meeting_link, "teams") -> %>
+                                    <div class="h-8 w-8 rounded-lg bg-purple-500 flex items-center justify-center shadow-sm border-2 border-purple-600">
+                                      <svg
+                                        class="h-5 w-5 text-white"
+                                        viewBox="0 0 24 24"
+                                        fill="currentColor"
+                                      >
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.94-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+                                      </svg>
+                                    </div>
+                                  <% event.meeting_link -> %>
+                                    <div class="h-8 w-8 rounded-lg bg-gray-400 flex items-center justify-center shadow-sm border-2 border-gray-500">
+                                      <svg
+                                        class="h-5 w-5 text-white"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                          stroke-width="2"
+                                          d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                        />
+                                      </svg>
+                                    </div>
+                                  <% true -> %>
+                                    <span></span>
+                                <% end %>
+                              </div>
                             </div>
                             <span class="text-xs font-medium text-gray-600">
-                              {format_datetime(event.start_time)}
+                              {format_datetime(event.start_time, @user_timezone)}
                             </span>
                           </div>
 
@@ -551,7 +579,7 @@ defmodule SMGWeb.DashboardLive do
             </div>
           </div>
         </div>
-
+        
     <!-- Past Events -->
         <div class="mt-8">
           <div class="bg-white border border-gray-100 rounded-xl overflow-hidden">
@@ -595,30 +623,52 @@ defmodule SMGWeb.DashboardLive do
                         <div class="flex-1">
                           <div class="flex items-start justify-between mb-3">
                             <div>
-                              <h4 class="text-sm font-semibold text-black mb-1">
-                                {event.title || "Untitled Event"}
-                              </h4>
-                              <%= if event.meeting_link do %>
-                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                                  <svg
-                                    class="w-3 h-3 mr-1"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      stroke-linecap="round"
-                                      stroke-linejoin="round"
-                                      stroke-width="2"
-                                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                                    />
-                                  </svg>
-                                  Had Video Meeting
-                                </span>
-                              <% end %>
+                              <div class="flex items-center space-x-3 mb-1">
+                                <h4 class="text-sm font-semibold text-black">
+                                  {event.title || "Untitled Event"}
+                                </h4>
+                                <%= cond do %>
+                                  <% event.meeting_link && String.contains?(event.meeting_link, "zoom") -> %>
+                                    <div class="h-8 w-8 rounded-lg">
+                                      <img src={~p"/images/zoom.png"} width="36" />
+                                    </div>
+                                  <% event.meeting_link && String.contains?(event.meeting_link, "meet.google") -> %>
+                                    <div class="h-8 w-8 rounded-lg">
+                                      <img src={~p"/images/google_meet.png"} width="36" />
+                                    </div>
+                                  <% event.meeting_link && String.contains?(event.meeting_link, "teams") -> %>
+                                    <div class="h-8 w-8 rounded-lg bg-purple-500 flex items-center justify-center shadow-sm border-2 border-purple-600">
+                                      <svg
+                                        class="h-5 w-5 text-white"
+                                        viewBox="0 0 24 24"
+                                        fill="currentColor"
+                                      >
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.94-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+                                      </svg>
+                                    </div>
+                                  <% event.meeting_link -> %>
+                                    <div class="h-8 w-8 rounded-lg bg-gray-400 flex items-center justify-center shadow-sm border-2 border-gray-500">
+                                      <svg
+                                        class="h-5 w-5 text-white"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                          stroke-width="2"
+                                          d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                        />
+                                      </svg>
+                                    </div>
+                                  <% true -> %>
+                                    <span></span>
+                                <% end %>
+                              </div>
                             </div>
                             <span class="text-xs font-medium text-gray-600">
-                              {format_datetime(event.start_time)}
+                              {format_datetime(event.start_time, @user_timezone)}
                             </span>
                           </div>
 
@@ -732,7 +782,7 @@ defmodule SMGWeb.DashboardLive do
                     </div>
                   <% end %>
                 </div>
-
+                
     <!-- View All Past Events Link -->
                 <div class="mt-6 text-center">
                   <.link
@@ -753,9 +803,19 @@ defmodule SMGWeb.DashboardLive do
 
   defp format_datetime(nil), do: "No date"
 
-  defp format_datetime(datetime) do
-    datetime
-    |> Calendar.strftime("%B %d, %Y at %I:%M %p")
+  defp format_datetime(datetime, timezone \\ "America/New_York") do
+    # Try to convert to user's timezone, fallback to UTC if timezone conversion fails
+    try do
+      local_datetime = DateTime.shift_zone!(datetime, timezone)
+
+      local_datetime
+      |> Calendar.strftime("%B %d, %Y at %I:%M %p %Z")
+    rescue
+      _ ->
+        # Fallback to UTC if timezone conversion fails
+        datetime
+        |> Calendar.strftime("%B %d, %Y at %I:%M %p UTC")
+    end
   end
 
   defp transcript_status_color("completed"), do: "bg-green-100 text-green-800"

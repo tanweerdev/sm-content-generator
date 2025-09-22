@@ -28,9 +28,15 @@ import topbar from "../vendor/topbar"
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 
 // Custom hooks for LiveView
-// const Hooks = {
-//   ...colocatedHooks
-// }
+const Hooks = {
+  // Hook to detect browser timezone and send to LiveView
+  TimezoneDetector: {
+    mounted() {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+      this.pushEvent("timezone_detected", { timezone: timezone })
+    }
+  }
+}
 
 // Add copy to clipboard functionality
 window.addEventListener("phx:copy-to-clipboard", (e) => {
@@ -56,7 +62,7 @@ window.addEventListener("phx:copy-to-clipboard", (e) => {
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  // hooks: Hooks,
+  hooks: Hooks,
 })
 
 // Show progress bar on live navigation and form submits

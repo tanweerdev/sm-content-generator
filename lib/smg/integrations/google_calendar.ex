@@ -13,12 +13,17 @@ defmodule SMG.Integrations.GoogleCalendar do
   Fetches events from Google Calendar for a given account
   """
   def fetch_events(%GoogleAccount{} = google_account, opts \\ []) do
+    fetch_events_with_retry(google_account, opts, false)
+  end
+
+  defp fetch_events_with_retry(%GoogleAccount{} = google_account, opts, retried?) do
     require Logger
 
     Logger.info("Starting to fetch events from Google Calendar",
       account_id: google_account.id,
       email: google_account.email,
-      opts: opts
+      opts: opts,
+      retried: retried?
     )
 
     with {:ok, conn} <- get_connection(google_account) do
@@ -72,7 +77,19 @@ defmodule SMG.Integrations.GoogleCalendar do
             body: response.body
           )
 
-          {:error, "Google Calendar API error (#{response.status}): #{response.body}"}
+          # Check if this is a token expiry error and we haven't retried yet
+          if is_token_expired_error?(response) and not retried? do
+            Logger.info("Token expired, attempting to refresh and retry",
+              account_id: google_account.id
+            )
+
+            case refresh_token_and_retry(google_account, opts) do
+              {:ok, events} -> {:ok, events}
+              {:error, reason} -> {:error, reason}
+            end
+          else
+            {:error, "Google Calendar API error (#{response.status}): #{response.body}"}
+          end
 
         {:error, reason} ->
           Logger.error("Failed to fetch events from Google Calendar",
@@ -456,4 +473,81 @@ defmodule SMG.Integrations.GoogleCalendar do
   end
 
   defp add_conference_detail(list, _label, _value), do: list
+
+  @doc """
+  Checks if the API error response indicates an expired OAuth token
+  """
+  defp is_token_expired_error?(%Tesla.Env{status: 401}), do: true
+  defp is_token_expired_error?(%Tesla.Env{status: 403, body: body}) do
+    # Check for specific Google OAuth error messages
+    case Jason.decode(body) do
+      {:ok, %{"error" => %{"message" => message}}} ->
+        String.contains?(String.downcase(message), ["invalid credentials", "token expired", "invalid_token"])
+
+      {:ok, %{"error" => %{"errors" => errors}}} when is_list(errors) ->
+        Enum.any?(errors, fn error ->
+          message = error["message"] || ""
+          String.contains?(String.downcase(message), ["invalid credentials", "token expired", "invalid_token"])
+        end)
+
+      _ -> false
+    end
+  end
+  defp is_token_expired_error?(_), do: false
+
+  @doc """
+  Attempts to refresh the token and retry the calendar sync
+  """
+  defp refresh_token_and_retry(%GoogleAccount{} = google_account, opts) do
+    require Logger
+
+    Logger.info("Attempting to refresh Google OAuth token",
+      account_id: google_account.id,
+      email: google_account.email
+    )
+
+    case SMG.Integrations.GoogleAuth.refresh_token(google_account.refresh_token) do
+      {:ok, token_data} ->
+        # Update the account with new token
+        update_attrs = %{
+          access_token: token_data["access_token"],
+          expires_at: DateTime.add(DateTime.utc_now(), token_data["expires_in"], :second)
+        }
+
+        # Add new refresh token if provided
+        update_attrs =
+          if token_data["refresh_token"] do
+            Map.put(update_attrs, :refresh_token, token_data["refresh_token"])
+          else
+            update_attrs
+          end
+
+        case SMG.Accounts.update_google_account(google_account, update_attrs) do
+          {:ok, updated_account} ->
+            Logger.info("Successfully refreshed token, retrying calendar sync",
+              account_id: google_account.id,
+              new_expires_at: updated_account.expires_at
+            )
+
+            # Retry the fetch with the updated account
+            fetch_events_with_retry(updated_account, opts, true)
+
+          {:error, changeset} ->
+            Logger.error("Failed to update account with refreshed token",
+              account_id: google_account.id,
+              errors: inspect(changeset.errors)
+            )
+
+            {:error, "Failed to update account with new token"}
+        end
+
+      {:error, reason} ->
+        Logger.error("Failed to refresh Google OAuth token",
+          account_id: google_account.id,
+          reason: reason
+        )
+
+        {:error, "Token refresh failed: #{reason}"}
+    end
+  end
 end

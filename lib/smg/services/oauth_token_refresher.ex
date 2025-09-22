@@ -118,7 +118,8 @@ defmodule SMG.Services.OAuthTokenRefresher do
   end
 
   defp get_expiring_google_accounts do
-    buffer_time = DateTime.add(DateTime.utc_now(), @refresh_buffer, :millisecond)
+    # Calculate buffer time correctly - 10 minutes from now
+    buffer_time = DateTime.add(DateTime.utc_now(), div(@refresh_buffer, 1000), :second)
 
     from(ga in GoogleAccount,
       where:
@@ -131,7 +132,8 @@ defmodule SMG.Services.OAuthTokenRefresher do
   end
 
   defp get_expiring_social_connections do
-    buffer_time = DateTime.add(DateTime.utc_now(), @refresh_buffer, :millisecond)
+    # Calculate buffer time correctly - 10 minutes from now
+    buffer_time = DateTime.add(DateTime.utc_now(), div(@refresh_buffer, 1000), :second)
 
     from(sc in SocialConnection,
       where:
@@ -146,49 +148,81 @@ defmodule SMG.Services.OAuthTokenRefresher do
   defp refresh_google_token(%GoogleAccount{} = account) do
     Logger.info("Refreshing Google token",
       user_id: account.user_id,
-      expires_at: account.expires_at
+      email: account.email,
+      expires_at: account.expires_at,
+      has_refresh_token: not is_nil(account.refresh_token)
     )
 
-    case SMG.Integrations.GoogleAuth.refresh_token(account.refresh_token) do
-      {:ok, token_data} ->
-        update_attrs = %{
-          access_token: token_data["access_token"],
-          expires_at: DateTime.add(DateTime.utc_now(), token_data["expires_in"], :second)
-        }
+    if is_nil(account.refresh_token) do
+      Logger.warning("Google account missing refresh token, skipping refresh",
+        user_id: account.user_id,
+        email: account.email
+      )
 
-        # Add new refresh token if provided
-        update_attrs =
-          if token_data["refresh_token"] do
-            Map.put(update_attrs, :refresh_token, token_data["refresh_token"])
-          else
-            update_attrs
+      {:error, "No refresh token available"}
+    else
+      case SMG.Integrations.GoogleAuth.refresh_token(account.refresh_token) do
+        {:ok, token_data} ->
+          update_attrs = %{
+            access_token: token_data["access_token"],
+            expires_at: DateTime.add(DateTime.utc_now(), token_data["expires_in"], :second)
+          }
+
+          # Add new refresh token if provided
+          update_attrs =
+            if token_data["refresh_token"] do
+              Map.put(update_attrs, :refresh_token, token_data["refresh_token"])
+            else
+              update_attrs
+            end
+
+          # Preserve original scope if not in response
+          update_attrs =
+            if token_data["scope"] do
+              Map.put(update_attrs, :scope, token_data["scope"])
+            else
+              update_attrs
+            end
+
+          case Accounts.update_google_account(account, update_attrs) do
+            {:ok, updated_account} ->
+              Logger.info("Successfully refreshed Google token",
+                user_id: account.user_id,
+                email: account.email,
+                new_expires_at: updated_account.expires_at
+              )
+
+              {:ok, updated_account}
+
+            {:error, changeset} ->
+              Logger.error("Failed to update Google account with new token",
+                user_id: account.user_id,
+                email: account.email,
+                errors: inspect(changeset.errors)
+              )
+
+              {:error, "Failed to update account: #{inspect(changeset.errors)}"}
           end
 
-        case Accounts.update_google_account(account, update_attrs) do
-          {:ok, updated_account} ->
-            Logger.info("Successfully refreshed Google token",
+        {:error, reason} ->
+          Logger.error("Failed to refresh Google token",
+            user_id: account.user_id,
+            email: account.email,
+            reason: reason,
+            refresh_token_length: String.length(account.refresh_token || "")
+          )
+
+          # If refresh token is invalid, we might need to mark it for re-authentication
+          if String.contains?(to_string(reason), ["invalid_grant", "invalid_token"]) do
+            Logger.warning(
+              "Google refresh token appears invalid, user may need to re-authenticate",
               user_id: account.user_id,
-              new_expires_at: updated_account.expires_at
+              email: account.email
             )
+          end
 
-            {:ok, updated_account}
-
-          {:error, changeset} ->
-            Logger.error("Failed to update Google account with new token",
-              user_id: account.user_id,
-              errors: inspect(changeset.errors)
-            )
-
-            {:error, "Failed to update account: #{inspect(changeset.errors)}"}
-        end
-
-      {:error, reason} ->
-        Logger.error("Failed to refresh Google token",
-          user_id: account.user_id,
-          reason: reason
-        )
-
-        {:error, reason}
+          {:error, reason}
+      end
     end
   end
 

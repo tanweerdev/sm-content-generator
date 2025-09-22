@@ -109,4 +109,13 @@ if config_env() == :prod do
     redirect_uri: "https://#{host}/auth/google/callback",
     prompt: "consent select_account",
     access_type: "offline"
+
+  # Guardian configuration for production
+  config :cgenerator, SMG.Auth.Guardian,
+    issuer: "cgenerator",
+    secret_key:
+      System.get_env("GUARDIAN_SECRET_KEY") ||
+        "gMbPgy789RCV2vhmpFc39xcfs2SlHY+Jc54VNglquLzhao9P/XhNAyj3cIJcLaQa",
+    ttl: {1, :day},
+    allowed_algos: ["HS256"]
 end

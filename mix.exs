@@ -76,6 +76,8 @@ defmodule SMG.MixProject do
       {:goth, "~> 1.3"},
       {:tesla, "~> 1.9"},
       {:hackney, "~> 1.20"},
+      # Authentication and session management
+      {:guardian, "~> 2.3"},
       # AI content generation
       {:openai, "~> 0.6"},
       # Date/time utilities
