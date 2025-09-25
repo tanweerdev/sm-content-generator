@@ -4,6 +4,7 @@ defmodule SMG.Accounts.User do
 
   alias SMG.Accounts.GoogleAccount
   alias SMG.Social.SocialPost
+  alias SMG.Emails.EmailContent
 
   schema "users" do
     field :email, :string
@@ -13,6 +14,7 @@ defmodule SMG.Accounts.User do
     has_many :google_accounts, GoogleAccount
     has_many :calendar_events, through: [:google_accounts, :calendar_events]
     has_many :social_posts, SocialPost
+    has_many :email_contents, EmailContent
 
     timestamps()
   end

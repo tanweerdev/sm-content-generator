@@ -2,7 +2,7 @@ defmodule SMGWeb.MeetingDetailLive do
   use SMGWeb, :live_view
   import Ecto.Query
 
-  alias SMG.{Events, AI.ContentGenerator}
+  alias SMG.{Events, Emails, AI.ContentGenerator, AI.EmailGenerator}
   alias SMG.Integrations.RecallAI
 
   @impl true
@@ -56,12 +56,20 @@ defmodule SMGWeb.MeetingDetailLive do
 
   @impl true
   def handle_event("generate_follow_up_email", _params, socket) do
-    meeting = socket.assigns.meeting
+    generate_email(socket, "followup")
+  end
 
+  @impl true
+  def handle_event("generate_email", %{"type" => email_type}, socket) do
+    generate_email(socket, email_type)
+  end
+
+  defp generate_email(socket, email_type) do
+    meeting = socket.assigns.meeting
     socket = assign(socket, :generating_email, true)
 
     Task.start(fn ->
-      case generate_follow_up_email(meeting) do
+      case EmailGenerator.generate_email_content(meeting, email_type) do
         {:ok, email_content} ->
           send(self(), {:email_generated, email_content})
 
@@ -207,7 +215,7 @@ defmodule SMGWeb.MeetingDetailLive do
     from(e in Events.CalendarEvent,
       join: g in assoc(e, :google_account),
       where: e.id == ^id and g.user_id == ^user.id,
-      preload: [:google_account, :social_posts]
+      preload: [:google_account, :social_posts, :email_contents]
     )
     |> SMG.Repo.one!()
   end
@@ -217,83 +225,6 @@ defmodule SMGWeb.MeetingDetailLive do
     assign(socket, :meeting, meeting)
   end
 
-  defp generate_follow_up_email(meeting) do
-    if meeting.transcript_url do
-      case fetch_transcript_content(meeting.transcript_url) do
-        {:ok, transcript} ->
-          prompt = build_email_prompt(transcript, meeting)
-          call_openai_for_email(prompt)
-
-        {:error, reason} ->
-          {:error, reason}
-      end
-    else
-      {:error, "No transcript available"}
-    end
-  end
-
-  defp fetch_transcript_content(url) do
-    case Tesla.get(url) do
-      {:ok, %{status: 200, body: body}} ->
-        {:ok, body}
-
-      {:ok, %{status: status}} ->
-        {:error, "Failed to fetch transcript: HTTP #{status}"}
-
-      {:error, reason} ->
-        {:error, "Network error: #{inspect(reason)}"}
-    end
-  end
-
-  defp build_email_prompt(transcript, meeting) do
-    """
-    Based on the following meeting transcript, create a professional follow-up email that summarizes the key points, decisions made, and action items discussed.
-
-    Meeting: #{meeting.title || "Meeting"}
-    Date: #{format_date(meeting.start_time)}
-
-    Transcript:
-    #{String.slice(transcript, 0, 4000)}
-
-    Please generate a follow-up email with:
-    - A clear subject line
-    - Brief summary of what was discussed
-    - Key decisions or outcomes
-    - Action items (if any)
-    - Professional and friendly tone
-
-    Format the response as a proper email.
-    """
-  end
-
-  defp call_openai_for_email(prompt) do
-    case OpenAI.chat_completion(
-           model: "gpt-4o-mini",
-           messages: [
-             %{
-               role: "system",
-               content:
-                 "You are a professional assistant helping to write follow-up emails for business meetings."
-             },
-             %{role: "user", content: prompt}
-           ],
-           max_tokens: 800,
-           temperature: 0.7
-         ) do
-      {:ok, response} ->
-        content =
-          response.choices
-          |> List.first()
-          |> Map.get("message")
-          |> Map.get("content")
-          |> String.trim()
-
-        {:ok, content}
-
-      {:error, reason} ->
-        {:error, "OpenAI API error: #{inspect(reason)}"}
-    end
-  end
 
   @impl true
   def render(assigns) do
@@ -410,7 +341,7 @@ defmodule SMGWeb.MeetingDetailLive do
                 phx-value-tab="email"
                 class={"#{if @active_tab == "email", do: "bg-green-100 border-green-500 text-green-700 shadow-sm", else: "bg-white border-gray-200 text-gray-600 hover:text-gray-800 hover:bg-gray-50"} whitespace-nowrap py-3 px-4 border rounded-lg font-medium text-sm transition-all duration-150"}
               >
-                Follow-up Email
+                Email Content (<%= length(@meeting.email_contents) %>)
               </button>
             </nav>
           </div>
@@ -776,7 +707,7 @@ defmodule SMGWeb.MeetingDetailLive do
             <div class="bg-white shadow rounded-lg">
               <div class="px-4 py-5 sm:p-6">
                 <div class="flex items-center justify-between mb-4">
-                  <h3 class="text-lg leading-6 font-medium text-gray-900">Follow-up Email</h3>
+                  <h3 class="text-lg leading-6 font-medium text-gray-900">Email Content</h3>
                   <%= if @meeting.transcript_status == "completed" do %>
                     <button
                       phx-click="generate_follow_up_email"
@@ -813,31 +744,56 @@ defmodule SMGWeb.MeetingDetailLive do
                   <% end %>
                 </div>
 
-                <%= if assigns[:generated_email] do %>
-                  <div class="bg-gray-50 rounded-lg p-4">
-                    <p class="text-sm text-gray-900 whitespace-pre-wrap">{@generated_email}</p>
+                <!-- Email Generation Controls -->
+                <%= if @meeting.transcript_status == "completed" and length(@meeting.email_contents) == 0 do %>
+                  <div class="mb-4">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      <%= for email_type <- ["followup", "thank_you", "meeting_summary", "action_items"] do %>
+                        <button
+                          phx-click="generate_email"
+                          phx-value-type={email_type}
+                          disabled={@generating_email}
+                          class={"text-xs px-2 py-1 border border-gray-300 shadow-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50 #{if @generating_email, do: "opacity-50 cursor-not-allowed"}"}
+                        >
+                          <%= String.capitalize(String.replace(email_type, "_", " ")) %>
+                        </button>
+                      <% end %>
+                    </div>
+                  </div>
+                <% end %>
+
+                <!-- Generated Emails List -->
+                <%= if length(@meeting.email_contents) > 0 do %>
+                  <div class="space-y-3">
+                    <%= for email <- @meeting.email_contents do %>
+                      <div class="border border-gray-200 rounded-lg p-3">
+                        <div class="flex items-center justify-between mb-2">
+                          <div class="flex items-center space-x-2">
+                            <h4 class="font-medium text-gray-900 text-sm"><%= email.subject %></h4>
+                            <span class={"px-2 py-1 text-xs font-medium rounded-full #{email_type_color(email.email_type)}"}>
+                              <%= String.capitalize(String.replace(email.email_type, "_", " ")) %>
+                            </span>
+                          </div>
+                          <span class="text-xs text-gray-500">
+                            <%= format_date(email.inserted_at) %>
+                          </span>
+                        </div>
+
+                        <div class="text-sm text-gray-700 bg-gray-50 rounded p-2 whitespace-pre-wrap">
+                          <%= email.body %>
+                        </div>
+                      </div>
+                    <% end %>
                   </div>
                 <% else %>
-                  <div class="text-center py-8">
-                    <svg
-                      class="mx-auto h-12 w-12 text-gray-400"
-                      stroke="currentColor"
-                      fill="none"
-                      viewBox="0 0 48 48"
-                    >
-                      <path
-                        d="M8 14v20c0 4.418 7.163 8 16 8 1.381 0 2.721-.087 4-.252M8 14c0 4.418 7.163 8 16 8s16-3.582 16-8M8 14c0-4.418 7.163-8 16-8s16 3.582 16 8m0 0v14m-16-5c0 4.418 7.163 8 16 8 1.381 0 2.721-.087 4-.252"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      />
+                  <div class="text-center py-6">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
-                    <h3 class="mt-2 text-sm font-medium text-gray-900">
-                      No follow-up email generated
-                    </h3>
+                    <h3 class="mt-2 text-sm font-medium text-gray-900">No email content generated</h3>
                     <p class="mt-1 text-sm text-gray-500">
                       <%= if @meeting.transcript_status == "completed" do %>
-                        Generate a professional follow-up email based on the meeting transcript.
+                        Email content will be automatically generated after transcript processing.
                       <% else %>
                         Email generation will be available once the transcript is completed.
                       <% end %>
@@ -861,20 +817,39 @@ defmodule SMGWeb.MeetingDetailLive do
 
   defp format_date(nil), do: "Unknown"
 
-  defp format_date(datetime) do
+  defp format_date(%DateTime{} = datetime) do
     datetime
     |> DateTime.to_date()
     |> Date.to_string()
+  end
+
+  defp format_date(%NaiveDateTime{} = datetime) do
+    datetime
+    |> NaiveDateTime.to_date()
+    |> Date.to_string()
+  end
+
+  defp format_date(%Date{} = date) do
+    Date.to_string(date)
   end
 
   defp transcript_status_color("completed"), do: "bg-green-100 text-green-800"
   defp transcript_status_color("scheduled"), do: "bg-yellow-100 text-yellow-800"
   defp transcript_status_color("processing"), do: "bg-blue-100 text-blue-800"
   defp transcript_status_color("failed"), do: "bg-red-100 text-red-800"
-  defp transcript_status_color(_), do: "bg-gray-100 text-gray-800"
 
-  defp status_color("draft"), do: "bg-yellow-100 text-yellow-800"
-  defp status_color("posted"), do: "bg-green-100 text-green-800"
-  defp status_color("failed"), do: "bg-red-100 text-red-800"
+  defp email_type_color("followup"), do: "bg-blue-100 text-blue-800"
+  defp email_type_color("thank_you"), do: "bg-green-100 text-green-800"
+  defp email_type_color("meeting_summary"), do: "bg-purple-100 text-purple-800"
+  defp email_type_color("action_items"), do: "bg-orange-100 text-orange-800"
+  defp email_type_color("reminder"), do: "bg-yellow-100 text-yellow-800"
+  defp email_type_color("introduction"), do: "bg-indigo-100 text-indigo-800"
+  defp email_type_color(_), do: "bg-gray-100 text-gray-800"
+
+  defp status_color("draft"), do: "bg-gray-100 text-gray-800"
+  defp status_color("sent"), do: "bg-green-100 text-green-800"
+  defp status_color("archived"), do: "bg-yellow-100 text-yellow-800"
   defp status_color(_), do: "bg-gray-100 text-gray-800"
+
+  defp transcript_status_color(_), do: "bg-gray-100 text-gray-800"
 end

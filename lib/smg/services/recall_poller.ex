@@ -232,18 +232,37 @@ defmodule SMG.Services.RecallPoller do
 
     case Events.update_event(event, update_attrs) do
       {:ok, updated_event} ->
-        # Trigger AI content generation
+        # Trigger AI content generation (social posts and emails)
         Task.start(fn ->
-          case SMG.AI.ContentGenerator.generate_social_content(updated_event) do
+          # Generate social content
+          social_result = SMG.AI.ContentGenerator.generate_social_content(updated_event)
+
+          case social_result do
             {:ok, _} ->
-              Logger.info("AI content generation triggered", event_id: updated_event.id)
+              Logger.info("AI social content generation triggered", event_id: updated_event.id)
 
             {:error, reason} ->
-              Logger.error("AI content generation failed",
+              Logger.error("AI social content generation failed",
                 event_id: updated_event.id,
                 reason: reason
               )
           end
+
+          # Generate email content
+          email_result = SMG.AI.EmailGenerator.generate_multi_type_emails(updated_event)
+
+          successful_emails = Enum.count(email_result, fn {_type, result} ->
+            case result do
+              {:ok, _} -> true
+              _ -> false
+            end
+          end)
+
+          Logger.info("AI email content generation completed",
+            event_id: updated_event.id,
+            successful_emails: successful_emails,
+            total_attempted: length(email_result)
+          )
         end)
 
         {:ok, {:transcription_completed, updated_event}}
@@ -322,18 +341,37 @@ defmodule SMG.Services.RecallPoller do
 
     case Events.update_event(event, update_attrs) do
       {:ok, updated_event} ->
-        # Trigger AI content generation
+        # Trigger AI content generation (social posts and emails)
         Task.start(fn ->
-          case SMG.AI.ContentGenerator.generate_social_content(updated_event) do
+          # Generate social content
+          social_result = SMG.AI.ContentGenerator.generate_social_content(updated_event)
+
+          case social_result do
             {:ok, _} ->
-              Logger.info("AI content generation triggered", event_id: updated_event.id)
+              Logger.info("AI social content generation triggered", event_id: updated_event.id)
 
             {:error, reason} ->
-              Logger.error("AI content generation failed",
+              Logger.error("AI social content generation failed",
                 event_id: updated_event.id,
                 reason: reason
               )
           end
+
+          # Generate email content
+          email_result = SMG.AI.EmailGenerator.generate_multi_type_emails(updated_event)
+
+          successful_emails = Enum.count(email_result, fn {_type, result} ->
+            case result do
+              {:ok, _} -> true
+              _ -> false
+            end
+          end)
+
+          Logger.info("AI email content generation completed",
+            event_id: updated_event.id,
+            successful_emails: successful_emails,
+            total_attempted: length(email_result)
+          )
         end)
 
         {:ok, {:bot_completed, updated_event}}

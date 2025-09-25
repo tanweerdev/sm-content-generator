@@ -482,7 +482,7 @@ defmodule SMGWeb.CoreComponents do
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center h-16">
           <!-- Logo/Brand -->
-          <div class="flex items-center space-x-3">
+          <div class="flex items-center space-x-8">
             <.link href="/dashboard" class="flex items-center space-x-3">
               <div class="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
                 <span class="text-white font-bold text-lg">S</span>
@@ -491,6 +491,16 @@ defmodule SMGWeb.CoreComponents do
                 <h1 class="text-xl font-semibold text-black">SMG</h1>
               </div>
             </.link>
+
+            <!-- Navigation Links -->
+            <div class="hidden md:flex items-center space-x-6">
+              <.link href="/dashboard" class="text-gray-600 hover:text-green-600 font-medium">
+                Dashboard
+              </.link>
+              <.link href="/meetings" class="text-gray-600 hover:text-green-600 font-medium">
+                Meetings
+              </.link>
+            </div>
           </div>
           
     <!-- User Menu -->

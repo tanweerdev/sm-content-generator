@@ -98,6 +98,20 @@ defmodule SMG.Events do
   end
 
   @doc """
+  Gets a single calendar event.
+
+  Raises `Ecto.NoResultsError` if the Calendar event does not exist.
+  """
+  def get_calendar_event!(id), do: Repo.get!(CalendarEvent, id)
+
+  @doc """
+  Gets a single calendar event.
+
+  Returns nil if the Calendar event does not exist.
+  """
+  def get_calendar_event(id), do: Repo.get(CalendarEvent, id)
+
+  @doc """
   Creates a calendar event.
   """
   def create_event(attrs \\ %{}) do

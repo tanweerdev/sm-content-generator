@@ -288,138 +288,44 @@ defmodule SMGWeb.DashboardLive do
       <!-- Flash Messages -->
       <SMGWeb.Layouts.flash_group flash={@flash} />
       
-    <!-- Dashboard Navigation -->
-      <nav class="bg-white border-b border-gray-100 sticky top-0 z-10">
+    <!-- Navigation -->
+      <.navbar current_user={@user} />
+
+      <!-- Dashboard Actions -->
+      <div class="bg-gray-50 border-b border-gray-200">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div class="flex justify-between items-center h-16">
-            <!-- Logo/Brand -->
-            <div class="flex items-center space-x-3">
-              <.link href="/dashboard" class="flex items-center space-x-3">
-                <div class="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
-                  <span class="text-white font-bold text-lg">S</span>
-                </div>
-                <div>
-                  <h1 class="text-xl font-semibold text-black">SMG</h1>
-                </div>
-              </.link>
-            </div>
-            
-    <!-- Action Buttons -->
-            <div class="flex items-center space-x-4">
-              <!-- Sync Button -->
-              <button
-                phx-click="sync_latest_events"
-                disabled={@loading == true}
-                title={
-                  if @loading == true,
-                    do: "Syncing calendar events...",
-                    else: "Sync latest events from Google Calendar"
-                }
-                class={[
-                  "p-2 rounded-lg transition-colors",
-                  if(@loading == true,
-                    do: "bg-gray-100 text-gray-400 cursor-not-allowed",
-                    else: "text-gray-600 hover:text-green-600 hover:bg-gray-50"
-                  )
-                ]}
-              >
-                <%= if @loading == true do %>
-                  <svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle
-                      class="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      stroke-width="4"
-                    >
-                    </circle>
-                    <path
-                      class="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    >
-                    </path>
-                  </svg>
-                <% else %>
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                    >
-                    </path>
-                  </svg>
-                <% end %>
-              </button>
-              
-    <!-- Settings Button -->
-              <.link
-                href="/settings"
-                class="p-2 text-gray-600 hover:text-green-600 rounded-lg hover:bg-gray-50"
-              >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                  >
-                  </path>
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                  >
-                  </path>
+          <div class="flex justify-between items-center py-3">
+            <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+            <button
+              phx-click="sync_latest_events"
+              disabled={@loading == true}
+              title={
+                if @loading == true,
+                  do: "Syncing calendar events...",
+                  else: "Sync latest events from Google Calendar"
+              }
+              class={[
+                "inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500",
+                if(@loading == true, do: "opacity-50 cursor-not-allowed")
+              ]}
+            >
+              <%= if @loading == true do %>
+                <svg class="w-4 h-4 animate-spin mr-2" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-              </.link>
-              
-    <!-- User Menu -->
-              <div class="flex items-center space-x-3">
-                <%= if @user.avatar_url do %>
-                  <img
-                    src={@user.avatar_url}
-                    alt="User avatar"
-                    class="w-8 h-8 rounded-full border border-gray-200"
-                  />
-                <% else %>
-                  <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center border border-green-200">
-                    <span class="text-sm font-semibold text-green-700">
-                      {String.first(@user.name || @user.email)}
-                    </span>
-                  </div>
-                <% end %>
-                <div class="hidden sm:block">
-                  <p class="text-sm font-medium text-black">
-                    {@user.name || String.split(@user.email, "@") |> List.first()}
-                  </p>
-                  <p class="text-xs text-gray-500">{@user.email}</p>
-                </div>
-              </div>
-              
-    <!-- Logout Button -->
-              <a
-                href="/auth/logout"
-                class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50"
-              >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                  >
-                  </path>
+                Syncing...
+              <% else %>
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                 </svg>
-              </a>
-            </div>
+                Sync Calendar
+              <% end %>
+            </button>
           </div>
         </div>
-      </nav>
-      
+      </div>
+
     <!-- Main Content -->
       <div
         class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"

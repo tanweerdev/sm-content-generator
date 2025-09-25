@@ -4,6 +4,7 @@ defmodule SMG.Events.CalendarEvent do
 
   alias SMG.Accounts.GoogleAccount
   alias SMG.Social.SocialPost
+  alias SMG.Emails.EmailContent
 
   schema "calendar_events" do
     field :google_event_id, :string
@@ -22,6 +23,7 @@ defmodule SMG.Events.CalendarEvent do
 
     belongs_to :google_account, GoogleAccount
     has_many :social_posts, SocialPost
+    has_many :email_contents, EmailContent
 
     timestamps()
   end

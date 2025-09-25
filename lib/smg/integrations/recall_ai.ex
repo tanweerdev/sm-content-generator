@@ -121,8 +121,11 @@ defmodule SMG.Integrations.RecallAI do
               transcript_status: "completed"
             })
 
-            # Trigger AI content generation
-            SMG.AI.ContentGenerator.generate_social_content(event)
+            # Trigger AI content generation (social posts and emails)
+            Task.start(fn ->
+              SMG.AI.ContentGenerator.generate_social_content(event)
+              SMG.AI.EmailGenerator.generate_multi_type_emails(event)
+            end)
 
             {:ok, "Processed transcription completion"}
         end
