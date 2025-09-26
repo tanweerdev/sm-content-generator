@@ -89,6 +89,15 @@ defmodule SMGWeb.AuthController do
     |> redirect(to: "/")
   end
 
+  def clear_session(conn, _params) do
+    # Clear all session data to fix stale session issues
+    conn
+    |> Guardian.Plug.sign_out()
+    |> clear_session()
+    |> put_flash(:info, "Session cleared. Please try logging in again.")
+    |> redirect(to: "/")
+  end
+
   defp handle_google_auth(conn, auth) do
     require Logger
     current_user = get_current_user(conn)

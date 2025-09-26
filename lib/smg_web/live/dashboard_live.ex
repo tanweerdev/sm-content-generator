@@ -17,17 +17,17 @@ defmodule SMGWeb.DashboardLive do
       |> assign(:user_timezone, "America/New_York")
       |> load_data()
 
-    case Accounts.list_user_google_accounts(user) do
-      google_accounts = [google_account | _] ->
-        Enum.each(google_accounts, fn account ->
-          if account do
-            send(self(), {:auto_sync_calendar, google_account.id})
-          end
-        end)
+    # case Accounts.list_user_google_accounts(user) do
+    #   google_accounts = [google_account | _] ->
+    #     Enum.each(google_accounts, fn account ->
+    #       if account do
+    #         send(self(), {:auto_sync_calendar, google_account.id})
+    #       end
+    #     end)
 
-      [] ->
-        :ok
-    end
+    #   [] ->
+    #     :ok
+    # end
 
     {:ok, socket}
   end
@@ -287,7 +287,7 @@ defmodule SMGWeb.DashboardLive do
     >
       <!-- Flash Messages -->
       <SMGWeb.Layouts.flash_group flash={@flash} />
-      
+
     <!-- Navigation -->
       <.navbar current_user={@user} />
 
@@ -331,7 +331,7 @@ defmodule SMGWeb.DashboardLive do
         class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
         style="background-color: white !important;"
       >
-        
+
     <!-- Main Content Grid -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <!-- Upcoming Events -->
@@ -485,7 +485,7 @@ defmodule SMGWeb.DashboardLive do
             </div>
           </div>
         </div>
-        
+
     <!-- Past Events -->
         <div class="mt-8">
           <div class="bg-white border border-gray-100 rounded-xl overflow-hidden">
@@ -688,7 +688,7 @@ defmodule SMGWeb.DashboardLive do
                     </div>
                   <% end %>
                 </div>
-                
+
     <!-- View All Past Events Link -->
                 <div class="mt-6 text-center">
                   <.link

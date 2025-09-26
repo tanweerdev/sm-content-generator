@@ -8,7 +8,10 @@ defmodule SMGWeb.Router do
     plug :put_root_layout, html: {SMGWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug SMGWeb.GuardianAuthPlug
+  end
 
+  pipeline :guardian_auth do
     plug Guardian.Plug.Pipeline,
       module: SMG.Auth.Guardian,
       error_handler: SMGWeb.GuardianErrorHandler
@@ -16,7 +19,6 @@ defmodule SMGWeb.Router do
     plug Guardian.Plug.VerifySession
     plug Guardian.Plug.VerifyHeader, realm: "Bearer"
     plug Guardian.Plug.LoadResource, allow_blank: true
-    plug SMGWeb.GuardianAuthPlug
   end
 
   pipeline :auth do
@@ -26,15 +28,6 @@ defmodule SMGWeb.Router do
     plug :put_root_layout, html: {SMGWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
-
-    plug Guardian.Plug.Pipeline,
-      module: SMG.Auth.Guardian,
-      error_handler: SMGWeb.GuardianErrorHandler
-
-    plug Guardian.Plug.VerifySession
-    plug Guardian.Plug.VerifyHeader, realm: "Bearer"
-    plug Guardian.Plug.LoadResource, allow_blank: true
-    plug SMGWeb.GuardianAuthPlug
   end
 
   pipeline :require_auth do
@@ -49,6 +42,7 @@ defmodule SMGWeb.Router do
     pipe_through :auth
 
     get "/logout", AuthController, :logout
+    get "/clear", AuthController, :clear_session
     get "/:provider", AuthController, :request
     get "/:provider/callback", AuthController, :callback
     get "/linkedin/custom", LinkedInAuthController, :authorize
@@ -62,7 +56,7 @@ defmodule SMGWeb.Router do
   end
 
   scope "/", SMGWeb do
-    pipe_through [:browser, :require_auth]
+    pipe_through [:browser, :guardian_auth, :require_auth]
 
     live_session :require_auth, on_mount: {SMGWeb.AuthOnMount, :ensure_authenticated} do
       live "/dashboard", DashboardLive

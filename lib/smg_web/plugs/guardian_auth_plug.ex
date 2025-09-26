@@ -11,40 +11,56 @@ defmodule SMGWeb.GuardianAuthPlug do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    # Try to get user from Guardian first (from token)
-    current_user = Guardian.Plug.current_resource(conn)
+    require Logger
+    Logger.debug("GuardianAuthPlug called for path: #{conn.request_path}")
 
-    if current_user do
+    # Only run this logic if current_user hasn't already been set
+    if conn.assigns[:current_user] do
+      Logger.debug("Current user already set, skipping")
       conn
-      |> assign(:current_user, current_user)
     else
-      # Try to get user from session as fallback for existing sessions
-      user_id = get_session(conn, :user_id)
+      try do
+        # Check if Guardian plugs have run (they set this private key)
+        guardian_ran = conn.private[:guardian_default_resource] != nil
 
-      if user_id do
-        case SMG.Accounts.get_user(user_id) do
-          nil ->
-            conn
-            |> assign(:current_user, nil)
-            |> clear_session()
+        if guardian_ran do
+          # Guardian plugs have run, get the user from Guardian
+          current_user = Guardian.Plug.current_resource(conn)
+          Logger.debug("Current user from Guardian: #{inspect(current_user != nil)}")
 
-          user ->
-            # Create a new Guardian token for the user
-            case Guardian.authenticate(user) do
-              {:ok, %{token: _token}} ->
-                conn
-                |> Guardian.Plug.sign_in(user)
-                |> assign(:current_user, user)
+          conn
+          |> assign(:current_user, current_user)
+        else
+          # Guardian plugs haven't run (non-protected route), check session
+          user_id = get_session(conn, :user_id)
+          Logger.debug("Checking session for user_id: #{inspect(user_id)}")
 
-              {:error, _reason} ->
+          if user_id do
+            case SMG.Accounts.get_user(user_id) do
+              nil ->
+                Logger.debug("User not found in database, clearing session")
                 conn
                 |> assign(:current_user, nil)
                 |> clear_session()
+
+              user ->
+                Logger.debug("Found user in session: #{user.id}")
+                conn
+                |> assign(:current_user, user)
             end
+          else
+            Logger.debug("No user_id in session")
+            conn
+            |> assign(:current_user, nil)
+          end
         end
-      else
-        conn
-        |> assign(:current_user, nil)
+      rescue
+        error ->
+          # If anything fails, clear session and continue
+          Logger.error("Error in GuardianAuthPlug: #{inspect(error)}")
+          conn
+          |> assign(:current_user, nil)
+          |> clear_session()
       end
     end
   end
